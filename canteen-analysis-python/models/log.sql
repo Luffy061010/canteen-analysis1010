@@ -1,0 +1,9 @@
+-- 操作日志表 SQL
+CREATE TABLE IF NOT EXISTS log (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    user_id INT NOT NULL,
+    username VARCHAR(50) NOT NULL,
+    action VARCHAR(100) NOT NULL,
+    detail TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);

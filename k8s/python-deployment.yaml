@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: canteen-python
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: canteen-python
+  template:
+    metadata:
+      labels:
+        app: canteen-python
+    spec:
+      containers:
+      - name: canteen-python
+        image: canteen-python:local
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+        env:
+        - name: DB_HOST
+          value: "mysql"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: canteen-python
+spec:
+  selector:
+    app: canteen-python
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+  type: ClusterIP

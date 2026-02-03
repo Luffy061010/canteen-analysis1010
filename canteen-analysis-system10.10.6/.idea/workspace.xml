@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="f7c5b67b-2361-48e4-a756-2367f6bed5e4" name="Changes" comment="新提交">
+      <change beforePath="$PROJECT_DIR$/vite-project/src/views/Dashboard.vue" beforeDir="false" afterPath="$PROJECT_DIR$/vite-project/src/views/Dashboard.vue" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/vite-project/src/views/analysis/ConsumptionDrift.vue" beforeDir="false" afterPath="$PROJECT_DIR$/vite-project/src/views/analysis/ConsumptionDrift.vue" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/vite-project/src/views/analysis/PovertyIdentification.vue" beforeDir="false" afterPath="$PROJECT_DIR$/vite-project/src/views/analysis/PovertyIdentification.vue" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/vite-project/src/views/analysis/mockData.js" beforeDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;history&quot;: [
+    {
+      &quot;state&quot;: &quot;OPEN&quot;,
+      &quot;assignee&quot;: &quot;Luffy061010&quot;,
+      &quot;author&quot;: &quot;Luffy061010&quot;
+    }
+  ],
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;Luffy061010&quot;,
+    &quot;author&quot;: &quot;Luffy061010&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/Luffy061010/canteen-analysis-system10.10.6.git&quot;,
+    &quot;accountId&quot;: &quot;8b71fefe-00c4-49b2-975c-7a02a780828b&quot;
+  }
+}</component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 6
+}</component>
+  <component name="ProjectId" id="34kMhaYyPd9nTTMnd4wcX0n5ZIs" />
+  <component name="ProjectLevelVcsManager">
+    <ConfirmationsSetting value="1" id="Add" />
+  </component>
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "Node.js.main.js.executor": "Debug",
+    "Node.js.user.js.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "git-widget-placeholder": "main",
+    "kotlin-language-version-configured": "true",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "npm.dev.executor": "Run",
+    "settings.editor.selected.configurable": "terminal",
+    "ts.external.directory.path": "F:\\WebStorm 2025.2.5\\plugins\\javascript-plugin\\jsLanguageServicesImpl\\external",
+    "vue.rearranger.settings.migration": "true"
+  }
+}]]></component>
+  <component name="RunManager">
+    <configuration name="dev" type="js.build_tools.npm" nameIsGenerated="true">
+      <package-json value="$PROJECT_DIR$/vite-project/package.json" />
+      <command value="run" />
+      <scripts>
+        <script value="dev" />
+      </scripts>
+      <node-interpreter value="project" />
+      <envs />
+      <method v="2" />
+    </configuration>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-js-predefined-d6986cc7102b-a71380e98a7c-JavaScript-WS-252.28238.10" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="f7c5b67b-2361-48e4-a756-2367f6bed5e4" name="Changes" comment="" />
+      <created>1761753237100</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1761753237100</updated>
+      <workItem from="1761753238609" duration="325000" />
+      <workItem from="1761808410753" duration="2054000" />
+      <workItem from="1761832169041" duration="437000" />
+      <workItem from="1761833486517" duration="366000" />
+      <workItem from="1761898930038" duration="12375000" />
+      <workItem from="1762238274295" duration="16235000" />
+      <workItem from="1762347372737" duration="661000" />
+      <workItem from="1762391871650" duration="9717000" />
+      <workItem from="1762434451114" duration="1070000" />
+      <workItem from="1762435855290" duration="25824000" />
+      <workItem from="1762587476842" duration="5202000" />
+      <workItem from="1762735822353" duration="525000" />
+      <workItem from="1762736364382" duration="3923000" />
+      <workItem from="1764118010591" duration="5000" />
+      <workItem from="1764118045557" duration="25000" />
+      <workItem from="1764118502310" duration="14000" />
+      <workItem from="1764118524679" duration="397000" />
+      <workItem from="1768382558059" duration="38000" />
+      <workItem from="1768382604853" duration="13878000" />
+      <workItem from="1768700113415" duration="6929000" />
+      <workItem from="1768792332766" duration="485000" />
+      <workItem from="1769063936717" duration="520000" />
+    </task>
+    <task id="LOCAL-00001" summary="新提交">
+      <option name="closed" value="true" />
+      <created>1762434493124</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1762434493124</updated>
+    </task>
+    <option name="localTasksCounter" value="2" />
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="OPEN_GENERIC_TABS">
+      <map>
+        <entry key="e1b55b03-97fc-45ac-afbc-bd4f49775fc9" value="TOOL_WINDOW" />
+      </map>
+    </option>
+    <option name="TAB_STATES">
+      <map>
+        <entry key="e1b55b03-97fc-45ac-afbc-bd4f49775fc9">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="新提交" />
+    <option name="LAST_COMMIT_MESSAGE" value="新提交" />
+  </component>
+</project>

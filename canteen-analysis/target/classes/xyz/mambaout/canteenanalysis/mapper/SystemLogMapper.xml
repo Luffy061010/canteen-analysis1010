@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="xyz.mambaout.canteenanalysis.mapper.SystemLogMapper">
+
+    <select id="queryLogs" resultType="xyz.mambaout.canteenanalysis.entity.po.SystemLog">
+        SELECT
+            id,
+            operation_time AS operationTime,
+            operator,
+            operation_type AS operationType,
+            module,
+            operation_detail AS operationDetail,
+            ip_address AS ipAddress,
+            result,
+            execution_time AS executionTime,
+            request_params AS requestParams,
+            response_result AS responseResult
+        FROM system_log
+        <where>
+            <if test="operationType != null and operationType != ''">
+                AND operation_type = #{operationType}
+            </if>
+            <if test="operator != null and operator != ''">
+                AND operator LIKE CONCAT('%', #{operator}, '%')
+            </if>
+            <if test="module != null and module != ''">
+                AND module = #{module}
+            </if>
+            <if test="result != null and result != ''">
+                AND result = #{result}
+            </if>
+            <if test="ipAddress != null and ipAddress != ''">
+                AND ip_address LIKE CONCAT('%', #{ipAddress}, '%')
+            </if>
+            <if test="timeBegin != null">
+                AND operation_time <![CDATA[>=]]> #{timeBegin}
+            </if>
+            <if test="timeEnd != null">
+                AND operation_time <![CDATA[<=]]> CONCAT(#{timeEnd}, ' 23:59:59')
+            </if>
+        </where>
+        ORDER BY operation_time DESC
+    </select>
+
+    <select id="countLogs" resultType="long">
+        SELECT COUNT(1)
+        FROM system_log
+        <where>
+            <if test="operationType != null and operationType != ''">
+                AND operation_type = #{operationType}
+            </if>
+            <if test="operator != null and operator != ''">
+                AND operator LIKE CONCAT('%', #{operator}, '%')
+            </if>
+            <if test="module != null and module != ''">
+                AND module = #{module}
+            </if>
+            <if test="result != null and result != ''">
+                AND result = #{result}
+            </if>
+            <if test="ipAddress != null and ipAddress != ''">
+                AND ip_address LIKE CONCAT('%', #{ipAddress}, '%')
+            </if>
+            <if test="timeBegin != null">
+                AND operation_time <![CDATA[>=]]> #{timeBegin}
+            </if>
+            <if test="timeEnd != null">
+                AND operation_time <![CDATA[<=]]> CONCAT(#{timeEnd}, ' 23:59:59')
+            </if>
+        </where>
+    </select>
+
+    <delete id="deleteByIds">
+        DELETE FROM system_log
+        WHERE id IN
+        <foreach collection="list" item="id" open="(" close=")" separator=",">
+            #{id}
+        </foreach>
+    </delete>
+
+    <select id="stats" resultType="xyz.mambaout.canteenanalysis.entity.vo.SystemLogStatsVO">
+        SELECT
+            COUNT(1) AS totalLogs,
+            SUM(CASE WHEN result = 'success' THEN 1 ELSE 0 END) AS successLogs,
+            SUM(CASE WHEN result = 'failure' THEN 1 ELSE 0 END) AS failureLogs,
+            COUNT(DISTINCT operator) AS uniqueUsers
+        FROM system_log
+        <where>
+            <if test="operationType != null and operationType != ''">
+                AND operation_type = #{operationType}
+            </if>
+            <if test="operator != null and operator != ''">
+                AND operator LIKE CONCAT('%', #{operator}, '%')
+            </if>
+            <if test="module != null and module != ''">
+                AND module = #{module}
+            </if>
+            <if test="result != null and result != ''">
+                AND result = #{result}
+            </if>
+            <if test="ipAddress != null and ipAddress != ''">
+                AND ip_address LIKE CONCAT('%', #{ipAddress}, '%')
+            </if>
+            <if test="timeBegin != null">
+                AND operation_time <![CDATA[>=]]> #{timeBegin}
+            </if>
+            <if test="timeEnd != null">
+                AND operation_time <![CDATA[<=]]> CONCAT(#{timeEnd}, ' 23:59:59')
+            </if>
+        </where>
+    </select>
+</mapper>
