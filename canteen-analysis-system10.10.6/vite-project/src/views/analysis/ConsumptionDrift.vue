@@ -122,9 +122,6 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="confidence" label="置信度" width="100">
-            <template #default="scope">{{ scope.row.confidence }}%</template>
-          </el-table-column>
           <el-table-column prop="detectDate" label="检测日期" width="120"></el-table-column>
         </el-table>
         <div class="pagination" style="margin-top: 12px; text-align: right;">

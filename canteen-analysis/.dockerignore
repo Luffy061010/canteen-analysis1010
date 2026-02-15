@@ -1,5 +1,0 @@
-target/
-.mvn/
-**/target/
-.idea/
-*.iml

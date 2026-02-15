@@ -1,0 +1,16 @@
+.git
+.idea
+.vscode
+
+**/__pycache__
+**/*.pyc
+
+**/node_modules
+**/dist
+
+**/target
+**/.mvn
+**/mvn
+
+*.log
+*.tmp

@@ -118,7 +118,7 @@ router.beforeEach((to, from, next) => {
         return
     }
 
-    // 如果路由需要管理员权限，校验 localStorage 中的 userInfo
+    // 管理员路由校验
     if (to.meta && to.meta.requiresAdmin) {
         const info = getStoredUserInfo()
         if (!info || !info.is_admin) {

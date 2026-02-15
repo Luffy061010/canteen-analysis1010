@@ -1,3 +1,6 @@
+"""
+FastAPI 后端入口：用户与权限、日志、数据分析相关接口。
+"""
 import json
 from typing import Optional
 from datetime import datetime, timedelta
@@ -22,8 +25,27 @@ import numpy as np
 
 app = FastAPI()
 
-# 数据库连接配置（请部署前修改为真实值）
-DB_CONFIG = {
+# 用户模型
+class User(BaseModel):
+    id: int = None
+    username: str
+    password_hash: str = None
+    is_admin: bool = False
+    is_active: bool = True
+    created_at: datetime = None
+
+class UserCreate(BaseModel):
+    username: str
+    password: str
+    is_admin: bool = False
+    is_active: bool = True
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+# 数据库连接配置（优先使用 config.mysql 中的 DBCONFIG）
+DB_CONFIG = getattr(mysql, 'DBCONFIG', None) or {
     'host': 'localhost',
     'user': 'root',
     'password': '123456',
@@ -60,13 +82,33 @@ def admin_required(current_user=Depends(get_current_user)):
 
 # 获取用户列表（仅管理员） 支持分页
 @app.get('/users')
-def get_users(page: int = 1, page_size: int = 20, current_user=Depends(admin_required)):
+def get_users(
+    page: int = 1,
+    page_size: int = Query(20, alias='page_size'),
+    username: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+    current_user=Depends(admin_required)
+):
     offset = (page - 1) * page_size
+    where_clauses = []
+    params = []
+    if username:
+        where_clauses.append('username LIKE %s')
+        params.append(f'%{username}%')
+    if is_admin is not None:
+        where_clauses.append('is_admin=%s')
+        params.append(1 if is_admin else 0)
+
+    where_sql = (' WHERE ' + ' AND '.join(where_clauses)) if where_clauses else ''
+
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT id, username, is_admin, is_active, created_at FROM user ORDER BY id LIMIT %s OFFSET %s', (page_size, offset))
+    cursor.execute(
+        f'SELECT id, username, is_admin, is_active, created_at FROM user{where_sql} ORDER BY id LIMIT %s OFFSET %s',
+        tuple(params + [page_size, offset])
+    )
     users = cursor.fetchall()
-    cursor.execute('SELECT COUNT(*) FROM user')
+    cursor.execute(f'SELECT COUNT(*) FROM user{where_sql}', tuple(params))
     total = cursor.fetchone()[0]
     conn.close()
     return {
@@ -86,20 +128,30 @@ def get_users(page: int = 1, page_size: int = 20, current_user=Depends(admin_req
 
 # 添加用户（仅管理员）
 @app.post('/users')
-def add_user(user: 'UserCreate', current_user=Depends(admin_required)):
+def add_user(user: UserCreate, current_user=Depends(admin_required)):
+    username = str(user.username or '').strip()
+    password = user.password or ''
+    if not username:
+        raise HTTPException(status_code=400, detail='用户名不能为空')
+    if len(password) < 6:
+        raise HTTPException(status_code=400, detail='密码至少 6 位')
+
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT id FROM user WHERE username=%s', (user.username,))
+    cursor.execute('SELECT id FROM user WHERE username=%s', (username,))
     if cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=400, detail='用户名已存在')
-    password_hash = hash_password(user.password)
-    cursor.execute('INSERT INTO user (username, password_hash) VALUES (%s, %s)', (user.username, password_hash))
+    password_hash = hash_password(password)
+    cursor.execute(
+        'INSERT INTO user (username, password_hash, is_admin, is_active) VALUES (%s, %s, %s, %s)',
+        (username, password_hash, bool(user.is_admin), bool(user.is_active))
+    )
     conn.commit()
     user_id = cursor.lastrowid
     conn.close()
-    write_log(current_user["user_id"], current_user["username"], 'add_user', f'添加用户 {user.username}')
-    return {'msg': '添加成功'}
+    write_log(current_user["user_id"], current_user["username"], 'add_user', f'添加用户 {username}')
+    return {'msg': '添加成功', 'id': user_id}
 
 # 删除用户（仅管理员）
 @app.delete('/users/{user_id}')
@@ -153,6 +205,11 @@ class ChangePasswordBody(BaseModel):
     old_password: str
     new_password: str
 
+
+class ForgotPasswordBody(BaseModel):
+    username: str
+    new_password: str
+
 @app.post('/change-password')
 def change_password(body: ChangePasswordBody, current_user=Depends(get_current_user)):
     conn = get_db()
@@ -171,6 +228,32 @@ def change_password(body: ChangePasswordBody, current_user=Depends(get_current_u
     conn.close()
     write_log(current_user['user_id'], current_user['username'], 'change_password', '修改密码')
     return {'msg': '密码修改成功'}
+
+
+@app.post('/forgot-password')
+def forgot_password(body: ForgotPasswordBody):
+    username = str(body.username or '').strip()
+    new_password = body.new_password or ''
+    if not username:
+        raise HTTPException(status_code=400, detail='用户名不能为空')
+    if len(new_password) < 6:
+        raise HTTPException(status_code=400, detail='新密码至少 6 位')
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, is_active FROM user WHERE username=%s', (username,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail='用户不存在')
+
+    user_id = row[0]
+    new_hash = hash_password(new_password)
+    cursor.execute('UPDATE user SET password_hash=%s WHERE id=%s', (new_hash, user_id))
+    conn.commit()
+    conn.close()
+    write_log(user_id, username, 'forgot_password', '通过忘记密码重置密码')
+    return {'msg': '密码重置成功'}
 
 
 # 注销（登出）: 将当前 token 加入黑名单
@@ -459,29 +542,37 @@ def delete_logs(body: LogDeleteBody, current_user=Depends(admin_required)):
     write_log(current_user['user_id'], current_user['username'], 'delete_logs', f'deleted {len(ids)} logs')
     return {'msg': '删除成功', 'deleted': len(ids)}
 
-# 用户模型
-class User(BaseModel):
-    id: int = None
-    username: str
-    password_hash: str = None
-    is_admin: bool = False
-    is_active: bool = True
-    created_at: datetime = None
-
-class UserCreate(BaseModel):
-    username: str
-    password: str
-
-class UserLogin(BaseModel):
-    username: str
-    password: str
-
 def get_db():
     conn = pymysql.connect(**DB_CONFIG)
     return conn
 
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode('utf-8')).hexdigest()
+
+
+def ensure_default_admin_account():
+    conn = get_db()
+    cursor = conn.cursor()
+    default_hash = hash_password('061010')
+    cursor.execute(
+        """
+        INSERT INTO user (username, password_hash, is_admin, is_active)
+        VALUES (%s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+            password_hash = VALUES(password_hash),
+            is_admin = VALUES(is_admin),
+            is_active = VALUES(is_active)
+        """,
+        ('lin', default_hash, True, True)
+    )
+    conn.commit()
+    conn.close()
+
+
+@app.on_event('startup')
+def bootstrap_security_defaults():
+    ensure_default_admin_account()
+    ensure_admin_requests_table()
 
 def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()
@@ -503,15 +594,14 @@ def register(user: UserCreate):
 
     conn = get_db()
     cursor = conn.cursor()
-    # 检查学号是否在学生基础表中存在
+    # 检查学号是否在学生基础表中存在（允许缺失，避免阻断新生注册）
+    student_exists = None
     try:
         cursor.execute('SELECT student_id FROM basic_data_student WHERE student_id=%s', (username,))
-        if not cursor.fetchone():
-            conn.close()
-            raise HTTPException(status_code=400, detail='学号未在学生信息表中登记，请联系管理员')
+        student_exists = cursor.fetchone() is not None
     except Exception:
-        # 如果 basic_data_student 表不存在或查询失败，允许继续注册，但记录警告
-        pass
+        # 如果 basic_data_student 表不存在或查询失败，允许继续注册
+        student_exists = None
 
     cursor.execute('SELECT id FROM user WHERE username=%s', (username,))
     if cursor.fetchone():
@@ -522,8 +612,21 @@ def register(user: UserCreate):
     cursor.execute('INSERT INTO user (username, password_hash) VALUES (%s, %s)', (username, password_hash))
     conn.commit()
     user_id = cursor.lastrowid
+    if student_exists is False:
+        try:
+            cursor.execute(
+                'INSERT INTO basic_data_student (student_id, name) VALUES (%s, %s)',
+                (username, username)
+            )
+            conn.commit()
+        except Exception:
+            # 基础表字段约束不同，插入失败时忽略，让注册继续完成
+            pass
     conn.close()
-    write_log(user_id, username, 'register', '用户注册')
+    if student_exists is False:
+        write_log(user_id, username, 'register', '用户注册（学号未登记到学生信息表）')
+    else:
+        write_log(user_id, username, 'register', '用户注册')
     # 自动为新注册用户签发 token 并返回用户信息，便于前端登录后直接使用
     token = create_access_token({"sub": username, "user_id": user_id, "is_admin": False})
     user_obj = {"id": user_id, "username": username, "is_admin": False, "is_active": True}

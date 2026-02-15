@@ -1,18 +1,21 @@
+"""Redis 读写封装：用于缓存与 token 黑名单。"""
 import json
 
 import redis
 from config.redis import REDISCONFIG
 
-r = redis.Redis(**REDISCONFIG,decode_responses=True)
+r = redis.Redis(**REDISCONFIG, decode_responses=True)
 
 def set_key(key, value):
-    r.set(key,value)
+    """写入字符串键值（Redis 不可用时忽略）。"""
+    try:
+        r.set(key, value)
+    except Exception:
+        return None
 
 def get_key(key):
-    return r.get(key)
-
-dict = {
-    "1":1,
-    "2":2
-}
-r.set("map",json.dumps(dict))
+    """读取字符串键值（Redis 不可用时返回 None）。"""
+    try:
+        return r.get(key)
+    except Exception:
+        return None

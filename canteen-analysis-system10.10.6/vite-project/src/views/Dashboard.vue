@@ -75,11 +75,6 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="povertyIndex" label="贫困指数" width="100">
-          <template #default="scope">
-            {{ (scope.row.povertyIndex || 0).toFixed(2) }}
-          </template>
-        </el-table-column>
       </el-table>
     </el-card>
   </div>
@@ -101,7 +96,7 @@ const statistics = ref({
 
 const povertyConsumptionData = ref([])
 const loading = ref(false)
-const CACHE_TTL = 60 * 1000
+const trendDataState = ref({ dates: [], values: [] })
 
 // 数据安全处理
 const safeValue = (val) => {
@@ -139,111 +134,112 @@ const sumAmount = (records = []) => {
   }, 0)
 }
 
-const fetchConsumptionSum = async ({ timeBegin, timeEnd }) => {
+const extractDateFromRecord = (record) => {
+  const timeRaw = record?.consumptionTime || record?.consumption_time || record?.consume_time || record?.consumeTime || ''
+  if (!timeRaw) return ''
+  if (typeof timeRaw === 'string') return timeRaw.split('T')[0]
+  try {
+    return new Date(timeRaw).toISOString().slice(0, 10)
+  } catch {
+    return ''
+  }
+}
+
+const fetchAllConsumptionRecords = async ({ timeBegin, timeEnd }) => {
   let page = 1
   const pageSize = 2000
-  const maxPages = 10
+  const maxPages = 30
   let totalCount = 0
-  let totalSum = 0
+  let all = []
 
   do {
     const res = await getConsumptionData({ page, pageSize, timeBegin, timeEnd })
     const records = extractRecords(res)
-    totalSum += sumAmount(records)
+    all = all.concat(records)
     totalCount = Number(extractTotal(res)) || records.length
     page += 1
   } while ((page - 1) * pageSize < totalCount && page <= maxPages)
 
-  return totalSum
+  return all
+}
+
+const buildTrendFromRecords = (records = []) => {
+  if (!records.length) return { dates: [], values: [] }
+
+  const dailyMap = {}
+  records.forEach((item) => {
+    const day = extractDateFromRecord(item)
+    if (!day) return
+    dailyMap[day] = (dailyMap[day] || 0) + safeValue(item?.amount ?? item?.money ?? 0)
+  })
+
+  const dateList = Object.keys(dailyMap).sort()
+  if (!dateList.length) return { dates: [], values: [] }
+
+  const latestDate = dateList[dateList.length - 1]
+  const latest = new Date(latestDate)
+  if (Number.isNaN(latest.getTime())) return { dates: [], values: [] }
+
+  const dates = []
+  const values = []
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(latest)
+    d.setDate(d.getDate() - i)
+    const key = d.toISOString().slice(0, 10)
+    dates.push(key.slice(5))
+    values.push(Number((dailyMap[key] || 0).toFixed(2)))
+  }
+
+  return { dates, values }
 }
 
 // 加载统计数据（系统状态接口）
 const loadStatistics = async () => {
   loading.value = true
   try {
-    const cacheRaw = sessionStorage.getItem('dashboard_stats_cache')
-    if (cacheRaw) {
-      const cache = JSON.parse(cacheRaw)
-      if (cache && Date.now() - cache.ts < CACHE_TTL && cache.data) {
-        statistics.value = cache.data
-        return
-      }
-    }
+    const [stat, studentStat, allRecords] = await Promise.all([
+      getSystemStatus().catch(() => null),
+      getStudentInfo({ page: 1, pageSize: 1 }).catch(() => null),
+      fetchAllConsumptionRecords({ timeBegin: '1970-01-01', timeEnd: '2099-12-31' }).catch(() => [])
+    ])
 
-    const stat = await getSystemStatus()
     const statSource = stat && typeof stat === 'object' && stat.data ? stat.data : stat
-    const nextStats = {
-      totalStudents: safeValue(pickStatValue(statSource, ['totalStudents', 'total_students', 'total'])),
-      todayConsumption: safeValue(pickStatValue(statSource, ['todayConsumption', 'today_consumption', 'todayTotal', 'totalAmount'])),
+    const totalStudents = safeValue(
+      pickStatValue(studentStat, ['total', 'totalCount']) ??
+      pickStatValue(studentStat?.data, ['total', 'totalCount']) ??
+      pickStatValue(statSource, ['totalStudents', 'total_students', 'total'])
+    )
+
+    const dailyMap = {}
+    allRecords.forEach((item) => {
+      const day = extractDateFromRecord(item)
+      if (!day) return
+      dailyMap[day] = (dailyMap[day] || 0) + safeValue(item?.amount ?? item?.money ?? 0)
+    })
+
+    const allDays = Object.keys(dailyMap).sort()
+    const latestDay = allDays.length ? allDays[allDays.length - 1] : ''
+    const latestMonth = latestDay ? latestDay.slice(0, 7) : ''
+
+    const todayConsumption = latestDay ? safeValue(dailyMap[latestDay]) : 0
+    const monthlyConsumption = latestMonth
+      ? safeValue(
+        allDays
+          .filter(day => day.startsWith(latestMonth))
+          .reduce((sum, day) => sum + safeValue(dailyMap[day]), 0)
+      )
+      : 0
+
+    const fallbackTotal = safeValue(pickStatValue(statSource, ['totalAmount', 'total']))
+
+    statistics.value = {
+      totalStudents,
+      todayConsumption: todayConsumption || fallbackTotal,
       povertyStudents: safeValue(pickStatValue(statSource, ['povertyStudents', 'poverty_students', 'povertyCount'])),
-      monthlyConsumption: safeValue(pickStatValue(statSource, ['monthlyConsumption', 'monthly_consumption', 'monthTotal', 'totalAmount']))
+      monthlyConsumption: monthlyConsumption || fallbackTotal
     }
 
-    const isEmpty = !nextStats.totalStudents && !nextStats.todayConsumption && !nextStats.monthlyConsumption && !nextStats.povertyStudents
-
-    if (isEmpty) {
-      // 兜底：用现有统计接口/学生数补齐
-      const [consumptionStat, studentStat] = await Promise.all([
-        getConsumption({}),
-        getStudentInfo({ page: 1, pageSize: 1 })
-      ])
-
-      const totalStudents = studentStat?.total || studentStat?.totalCount || studentStat?.data?.total || 0
-      const totalAmount = consumptionStat?.totalAmount || consumptionStat?.total || 0
-
-      statistics.value = {
-        totalStudents: safeValue(totalStudents),
-        todayConsumption: safeValue(totalAmount),
-        povertyStudents: safeValue(nextStats.povertyStudents),
-        monthlyConsumption: safeValue(totalAmount)
-      }
-    } else {
-      statistics.value = nextStats
-    }
-
-    // 若今日/本月为 0，则尝试按时间范围再取一次
-    if (!statistics.value.todayConsumption || !statistics.value.monthlyConsumption) {
-      const now = new Date()
-      const today = now.toISOString().slice(0, 10)
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
-      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10)
-
-      const [todayStat, monthStat] = await Promise.all([
-        getConsumption({ timeBegin: today, timeEnd: today }).catch(() => null),
-        getConsumption({ timeBegin: monthStart, timeEnd: monthEnd }).catch(() => null)
-      ])
-
-      let todayTotal = safeValue(pickStatValue(todayStat, ['totalAmount', 'total', 'amount']))
-      let monthTotal = safeValue(pickStatValue(monthStat, ['totalAmount', 'total', 'amount']))
-
-      if (!todayTotal) {
-        todayTotal = await fetchConsumptionSum({ timeBegin: today, timeEnd: today }).catch(() => 0)
-      }
-      if (!monthTotal) {
-        monthTotal = await fetchConsumptionSum({ timeBegin: monthStart, timeEnd: monthEnd }).catch(() => 0)
-      }
-
-      if (!statistics.value.todayConsumption && todayTotal) {
-        statistics.value.todayConsumption = todayTotal
-      }
-      if (!statistics.value.monthlyConsumption && monthTotal) {
-        statistics.value.monthlyConsumption = monthTotal
-      }
-    }
-
-    // 若仍为 0，则使用全量统计兜底（保证展示不为 0）
-    if (!statistics.value.todayConsumption || !statistics.value.monthlyConsumption) {
-      const overallStat = await getConsumption({}).catch(() => null)
-      const overallTotal = safeValue(pickStatValue(overallStat, ['totalAmount', 'total', 'amount']))
-      if (!statistics.value.todayConsumption && overallTotal) {
-        statistics.value.todayConsumption = overallTotal
-      }
-      if (!statistics.value.monthlyConsumption && overallTotal) {
-        statistics.value.monthlyConsumption = overallTotal
-      }
-    }
-
-    sessionStorage.setItem('dashboard_stats_cache', JSON.stringify({ ts: Date.now(), data: statistics.value }))
+    trendDataState.value = buildTrendFromRecords(allRecords)
   } catch (error) {
     console.error('加载统计数据失败:', error)
     // 兜底：当 /system/status 不可用时回退到消费统计与学生数
@@ -279,15 +275,6 @@ const loadStatistics = async () => {
 const loadPovertyData = async () => {
   loading.value = true
   try {
-    const cacheRaw = sessionStorage.getItem('dashboard_poverty_cache')
-    if (cacheRaw) {
-      const cache = JSON.parse(cacheRaw)
-      if (cache && Date.now() - cache.ts < CACHE_TTL && Array.isArray(cache.data)) {
-        povertyConsumptionData.value = cache.data
-        return
-      }
-    }
-
     const result = await getPovertyIdentification({ clusterMethod: 'kmeans' })
     const hasRootResults = result && (result.results || result.clusterData || result.distributionData || result.centers)
     const dataRoot = hasRootResults ? result : (result && typeof result === 'object' && result.data ? result.data : result)
@@ -307,8 +294,7 @@ const loadPovertyData = async () => {
         college: item.college || item.collegeName || item.college_name || '未知',
         monthlyAvg: safeValue(item.monthlyAvg ?? item.monthly_avg ?? 0),
         dailyAvg: safeValue(item.dailyAvg ?? item.daily_avg ?? 0),
-        clusterType: item.clusterType || item.type || '未知',
-        povertyIndex: safeValue(item.povertyIndex ?? item.poverty_index ?? 0)
+        clusterType: item.clusterType || item.type || '未知'
       }
     })
 
@@ -318,7 +304,6 @@ const loadPovertyData = async () => {
     if (!statistics.value.povertyStudents && povertyConsumptionData.value.length) {
       statistics.value.povertyStudents = povertyConsumptionData.value.length
     }
-    sessionStorage.setItem('dashboard_poverty_cache', JSON.stringify({ ts: Date.now(), data: povertyConsumptionData.value }))
   } catch (error) {
     console.error('加载贫困生数据失败:', error)
     povertyConsumptionData.value = []
@@ -455,21 +440,10 @@ const initConsumptionTrend = (trendData = null) => {
 
 // 生成默认趋势数据（如果没有真实数据）
 const generateDefaultTrendData = () => {
-  const dates = []
-  const values = []
-  const today = new Date()
-
-  for (let i = 29; i >= 0; i--) {
-    const date = new Date(today)
-    date.setDate(date.getDate() - i)
-    dates.push(date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }))
-
-    // 生成随机消费数据（模拟）
-    const baseValue = 50000 + Math.random() * 20000
-    values.push(Math.round(baseValue))
+  return {
+    dates: trendDataState.value?.dates || [],
+    values: trendDataState.value?.values || []
   }
-
-  return { dates, values }
 }
 
 // 获取消费类型标签颜色
@@ -496,7 +470,7 @@ onBeforeUnmount(() => {
 
 onMounted(async () => {
   await Promise.all([loadStatistics(), loadPovertyData()])
-  initConsumptionTrend()
+  initConsumptionTrend(trendDataState.value)
 })
 </script>
 

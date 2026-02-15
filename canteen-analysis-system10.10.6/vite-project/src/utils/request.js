@@ -1,8 +1,10 @@
+// 统一请求实例：负责鉴权、错误提示与响应格式兼容
 import axios from "axios";
 import { ElMessage, ElMessageBox } from "element-plus";
 import router from "../router/index"
 import { clearAuthToken, clearStoredUserInfo, getAuthToken, getStoredUserInfo } from "./auth"
 
+// 后端 Java 服务默认走 /api 代理
 const request = axios.create({
     baseURL: "/api",
     timeout: 600000,

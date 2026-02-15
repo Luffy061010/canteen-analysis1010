@@ -141,12 +141,6 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="povertyIndex" label="贫困指数" width="100">
-            <template #default="scope">{{ Number(scope.row.povertyIndex || 0).toFixed(3) }}</template>
-          </el-table-column>
-          <el-table-column prop="confidence" label="置信度" width="100">
-            <template #default="scope">{{ Number(scope.row.confidence || 0).toFixed(1) }}%</template>
-          </el-table-column>
         </el-table>
         <div class="pagination" style="margin-top: 12px; text-align: right;">
           <el-pagination
@@ -429,8 +423,7 @@ export default {
             monthlyAvg: Number(item.monthlyAvg ?? item.monthly_avg ?? 0),
             dailyAvg: Number(item.dailyAvg ?? item.daily_avg ?? 0),
             clusterType: item.clusterType || item.type || '普通消费',
-            povertyIndex: Number(item.povertyIndex ?? item.poverty_index ?? 0),
-            confidence: Number(item.confidence ?? 0)
+            povertyIndex: Number(item.povertyIndex ?? item.poverty_index ?? 0)
           }))
 
 

@@ -1,3 +1,6 @@
+"""
+数据汇总工具：从原始消费记录生成按学生/时间维度的统计特征。
+"""
 from schemas.form_dto import BaseBody,CorrelationBody
 import pymysql
 from config import mysql
@@ -6,11 +9,23 @@ import numpy as np
 from utils import redis_utils as r
 
 def get_data_summary(base_body:BaseBody) -> pd.DataFrame:
-
+    """查询消费明细并聚合为日均消费/次数特征。"""
 
     connection = pymysql.connect(**mysql.DBCONFIG)
     cursor = connection.cursor()
-    sql = "SELECT c.* FROM consumption_data_students_consumption c,basic_data_student s WHERE s.student_id = c.student_id"
+    sql = """
+    SELECT
+        s.student_id,
+        SUM(CASE WHEN c.meal_type = '早' THEN 1 ELSE 0 END) AS breakfast_count,
+        SUM(CASE WHEN c.meal_type = '早' THEN c.amount ELSE 0 END) AS breakfast_amount,
+        SUM(CASE WHEN c.meal_type = '中' THEN 1 ELSE 0 END) AS lunch_count,
+        SUM(CASE WHEN c.meal_type = '中' THEN c.amount ELSE 0 END) AS lunch_amount,
+        SUM(CASE WHEN c.meal_type = '晚' THEN 1 ELSE 0 END) AS dinner_count,
+        SUM(CASE WHEN c.meal_type = '晚' THEN c.amount ELSE 0 END) AS dinner_amount
+    FROM consumption_data_students_consumption c
+    JOIN basic_data_student s ON s.student_id = c.student_id
+    WHERE 1=1
+    """
     params = []
     if base_body.college:
         sql += " AND s.college = %s"
@@ -31,15 +46,59 @@ def get_data_summary(base_body:BaseBody) -> pd.DataFrame:
         sql += " AND c.consumption_time BETWEEN %s AND %s"
         params.append(base_body.timeBegin)
         params.append(base_body.timeEnd)
+    sql += " GROUP BY s.student_id"
     cursor.execute(sql, params)
     res = cursor.fetchall()
-    df = pd.DataFrame(data = res,columns=["id","student_id","consumption_time","window_id","amount", "meal_type"])
-    df.set_index("id",inplace=True)
-    # 目标汇总数据结构： 学生id  早餐次数 早餐平均金额 午餐次数 午餐平均金额 晚餐次数 晚餐平均金额 全部次数 全部平均金额
-    # 中间结果数据结构： 学生id  早餐次数 早餐金额 午餐次数 午餐金额 晚餐次数 晚餐金额
-    return summary(df,base_body)
+    cursor.close()
+    connection.close()
+
+    cols = [
+        "student_id",
+        "breakfast_count",
+        "breakfast_amount",
+        "lunch_count",
+        "lunch_amount",
+        "dinner_count",
+        "dinner_amount",
+    ]
+    df = pd.DataFrame(data=res, columns=cols)
+    if df.empty:
+        return pd.DataFrame(columns=[
+            "breakfast_avg_count", "breakfast_avg_amount",
+            "lunch_avg_count", "lunch_avg_amount",
+            "dinner_avg_count", "dinner_avg_amount"
+        ])
+
+    df.set_index("student_id", inplace=True)
+
+    duration = 1
+    if base_body.timeEnd and base_body.timeBegin:
+        try:
+            duration = (base_body.timeEnd - base_body.timeBegin).days
+        except Exception:
+            duration = 1
+    if duration <= 0:
+        duration = 1
+
+    res_df = pd.DataFrame(index=df.index, columns=[
+        "breakfast_avg_count", "breakfast_avg_amount",
+        "lunch_avg_count", "lunch_avg_amount",
+        "dinner_avg_count", "dinner_avg_amount"
+    ], dtype=float)
+
+    res_df["breakfast_avg_count"] = df["breakfast_count"] / duration
+    res_df["breakfast_avg_amount"] = df["breakfast_amount"] / df["breakfast_count"].replace(0, np.nan)
+    res_df["lunch_avg_count"] = df["lunch_count"] / duration
+    res_df["lunch_avg_amount"] = df["lunch_amount"] / df["lunch_count"].replace(0, np.nan)
+    res_df["dinner_avg_count"] = df["dinner_count"] / duration
+    res_df["dinner_avg_amount"] = df["dinner_amount"] / df["dinner_count"].replace(0, np.nan)
+
+    res_df.fillna(0, inplace=True)
+    res_df = res_df.astype(float).round(2)
+    return res_df
 
 def get_data_summary_gpa(correlation_body:CorrelationBody) -> list[pd.DataFrame]:
+    """按 GPA 分位区间获取消费特征，用于成绩相关性分析。"""
     connection = pymysql.connect(**mysql.DBCONFIG)
     cursor = connection.cursor()
     sql = "SELECT student_id,gpa FROM basic_data_score WHERE term = %s"
@@ -105,6 +164,7 @@ def get_data_summary_gpa(correlation_body:CorrelationBody) -> list[pd.DataFrame]
     return [df,df1, df2, df3]
 
 def summary(df:pd.DataFrame,base_body:BaseBody):
+    """将原始消费记录聚合为早餐/午餐/晚餐的日均次数与金额。"""
     # 无数据时直接返回空表，避免后续列访问报错
     empty_cols = [
         "breakfast_avg_count", "breakfast_avg_amount",

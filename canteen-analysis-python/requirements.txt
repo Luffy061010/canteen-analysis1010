@@ -1,7 +1,11 @@
 fastapi
 uvicorn[standard]
 pymysql
+cryptography
 PyJWT
 redis
 pydantic
 python-dotenv
+pandas
+scikit-learn
+matplotlib

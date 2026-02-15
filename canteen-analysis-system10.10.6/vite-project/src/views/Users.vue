@@ -48,13 +48,19 @@
       </div>
     </el-card>
 
-    <el-dialog title="添加用户" v-model:visible="showAddDialog">
-      <el-form :model="addForm">
-        <el-form-item label="用户名">
-          <el-input v-model="addForm.username" />
+    <el-dialog title="添加用户" v-model="showAddDialog">
+      <el-form ref="addFormRef" :model="addForm" :rules="addRules" label-position="top">
+        <el-form-item label="用户名" prop="username">
+          <el-input v-model="addForm.username" placeholder="请输入用户名" />
         </el-form-item>
-        <el-form-item label="密码">
-          <el-input type="password" v-model="addForm.password" />
+        <el-form-item label="密码" prop="password">
+          <el-input type="password" v-model="addForm.password" placeholder="至少 6 位" />
+        </el-form-item>
+        <el-form-item label="管理员">
+          <el-switch v-model="addForm.is_admin" active-text="是" inactive-text="否" />
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-switch v-model="addForm.is_active" active-text="启用" inactive-text="禁用" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -77,11 +83,24 @@ const total = ref(0)
 const filters = ref({ username: '', is_admin: '' })
 
 const showAddDialog = ref(false)
-const addForm = ref({ username: '', password: '' })
+const addFormRef = ref(null)
+const addForm = ref({ username: '', password: '', is_admin: false, is_active: true })
+const addRules = {
+  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
+  password: [
+    { required: true, message: '请输入密码', trigger: 'blur' },
+    { min: 6, message: '密码至少6位', trigger: 'blur' }
+  ]
+}
 
 const fetchUsers = async (p = page.value) => {
   try {
-    const res = await getUsers({ page: p, pageSize: page_size.value })
+    const res = await getUsers({
+      page: p,
+      page_size: page_size.value,
+      username: filters.value.username,
+      is_admin: filters.value.is_admin
+    })
     total.value = res.total || 0
     users.value = res.items || []
     page.value = res.page || p
@@ -91,19 +110,32 @@ const fetchUsers = async (p = page.value) => {
 }
 
 const openAddUser = () => {
-  addForm.value = { username: '', password: '' }
+  addForm.value = { username: '', password: '', is_admin: false, is_active: true }
   showAddDialog.value = true
 }
 
 const submitAdd = async () => {
-  try {
-    await addUserApi(addForm.value)
-    ElMessage.success('添加成功')
-    showAddDialog.value = false
-    fetchUsers(1)
-  } catch (e) {
-    ElMessage.error(e.response?.data?.message || e.message || '添加失败')
-  }
+  if (!addFormRef.value) return
+  addFormRef.value.validate(async (valid) => {
+    if (!valid) {
+      ElMessage.warning('请完整填写新增用户信息')
+      return
+    }
+    try {
+      const payload = {
+        username: String(addForm.value.username || '').trim(),
+        password: addForm.value.password,
+        is_admin: !!addForm.value.is_admin,
+        is_active: !!addForm.value.is_active
+      }
+      await addUserApi(payload)
+      ElMessage.success('添加成功')
+      showAddDialog.value = false
+      fetchUsers(1)
+    } catch (e) {
+      ElMessage.error(e.response?.data?.detail || e.response?.data?.message || e.message || '添加失败')
+    }
+  })
 }
 
 const removeUser = async (row) => {

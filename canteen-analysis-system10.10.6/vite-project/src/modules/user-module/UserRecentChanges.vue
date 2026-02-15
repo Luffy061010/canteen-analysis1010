@@ -22,7 +22,7 @@ import { getStoredUserInfo } from '@/utils/auth'
 const userInfo = getStoredUserInfo() || {}
 const uid = userInfo.username || userInfo.userId || ''
 
-const range = ref([new Date(Date.now() - 13 * 24 * 3600).toISOString().slice(0,10), new Date().toISOString().slice(0,10)])
+const range = ref([])
 const chart = ref(null)
 let chartIns = null
 const total = ref(0)

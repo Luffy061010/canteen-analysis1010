@@ -37,7 +37,8 @@
                 AND s.student_id = #{studentId}
             </if>
             <if test="timeBegin != null and timeEnd != null">
-                AND c.consumption_time BETWEEN #{timeBegin} AND #{timeEnd}
+                AND c.consumption_time &gt;= #{timeBegin}
+                AND c.consumption_time &lt; DATE_ADD(#{timeEnd}, INTERVAL 1 DAY)
             </if>
         </where>
     </select>
@@ -61,7 +62,8 @@
                 AND basic_data_student.student_id = #{studentId}
             </if>
             <if test="timeBegin != null and timeEnd != null">
-                AND c.consumption_time BETWEEN #{timeBegin} AND #{timeEnd}
+                AND c.consumption_time &gt;= #{timeBegin}
+                AND c.consumption_time &lt; DATE_ADD(#{timeEnd}, INTERVAL 1 DAY)
             </if>
         </where>
         AND c.student_id = basic_data_student.student_id
@@ -85,7 +87,8 @@
                 AND basic_data_student.student_id = #{studentId}
             </if>
             <if test="timeBegin != null and timeEnd != null">
-                AND c.consumption_time BETWEEN #{timeBegin} AND #{timeEnd}
+                AND c.consumption_time &gt;= #{timeBegin}
+                AND c.consumption_time &lt; DATE_ADD(#{timeEnd}, INTERVAL 1 DAY)
             </if>
         </where>
         AND c.student_id = basic_data_student.student_id
@@ -110,7 +113,8 @@
                 AND basic_data_student.student_id = #{studentId}
             </if>
             <if test="timeBegin != null and timeEnd != null">
-                AND c.consumption_time BETWEEN #{timeBegin} AND #{timeEnd}
+                AND c.consumption_time &gt;= #{timeBegin}
+                AND c.consumption_time &lt; DATE_ADD(#{timeEnd}, INTERVAL 1 DAY)
             </if>
             AND c.student_id = basic_data_student.student_id
         </where>

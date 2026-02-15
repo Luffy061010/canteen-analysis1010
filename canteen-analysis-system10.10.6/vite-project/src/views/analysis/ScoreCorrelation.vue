@@ -159,15 +159,25 @@
         <template #header>
           <span>成绩与消费关联性分析结果</span>
         </template>
+        <div class="result-meta" v-if="correlationMeta">
+          <el-tag effect="plain">有效样本 n={{ correlationMeta.sampleSize || correlationMeta.mergedCount || 0 }}</el-tag>
+          <el-tag effect="plain">方法={{ (correlationMeta.method || 'pearson').toUpperCase() }}</el-tag>
+          <el-tag effect="plain">多重校正={{ correlationMeta.multipleTest || 'BH-FDR' }}</el-tag>
+          <el-tag effect="plain">学期={{ correlationMeta.termUsed || '-' }}</el-tag>
+        </div>
         <el-table :data="enhancedCorrelationResults" style="width: 100%">
           <el-table-column prop="rank" label="排序" width="80"></el-table-column>
           <el-table-column prop="factor" label="消费因素" width="150"></el-table-column>
+          <el-table-column prop="sampleSize" label="样本量" width="90"></el-table-column>
           <el-table-column prop="correlation" label="相关系数" width="120">
             <template #default="scope">
               <el-tag :type="getCorrelationType(scope.row.correlation)">
                 {{ scope.row.correlation.toFixed(3) }}
               </el-tag>
             </template>
+          </el-table-column>
+          <el-table-column prop="ciRange" label="95%CI" width="170">
+            <template #default="scope">{{ formatCI(scope.row.ciLower, scope.row.ciUpper) }}</template>
           </el-table-column>
           <el-table-column prop="absCorrelation" label="绝对相关度" width="120">
             <template #default="scope">
@@ -183,9 +193,12 @@
           </el-table-column>
           <el-table-column prop="strength" label="强度" width="100"></el-table-column>
           <el-table-column prop="pValue" label="P值" width="120">
-            <template #default="scope">{{ scope.row.pValue.toFixed(4) }}</template>
+            <template #default="scope">{{ formatPValue(scope.row.pValue) }}</template>
           </el-table-column>
-          <el-table-column prop="significance" label="显著性" width="120">
+          <el-table-column prop="qValue" label="q值(FDR)" width="130">
+            <template #default="scope">{{ formatQValue(scope.row.qValue) }}</template>
+          </el-table-column>
+          <el-table-column prop="significance" label="显著性(FDR)" width="120">
             <template #default="scope">
               <el-tag :type="scope.row.significance === '显著' ? 'success' : 'info'">
                 {{ scope.row.significance }}
@@ -201,6 +214,7 @@
           <el-table-column prop="gpaBand" label="GPA梯度"></el-table-column>
           <el-table-column prop="count" label="人数" width="120"></el-table-column>
         </el-table>
+        <div class="result-note">说明：此处展示“相关性”而非“因果性”，显著性按 BH-FDR 校正后的 q 值判定。</div>
       </el-card>
     </el-card>
   </div>
@@ -457,6 +471,10 @@ export default {
         const corr = Number(r.correlation || 0)
         return {
           ...r,
+          sampleSize: Number(r.sampleSize || this.correlationMeta?.sampleSize || this.correlationMeta?.mergedCount || 0),
+          ciLower: r.ciLower ?? null,
+          ciUpper: r.ciUpper ?? null,
+          qValue: Number(r.qValue ?? 1),
           absCorrelation: Math.abs(corr),
           direction: corr > 0 ? '正相关' : corr < 0 ? '负相关' : '无相关',
           strength: strength(corr)
@@ -621,6 +639,26 @@ export default {
       if (Math.abs(correlation) > 0.1) return 'success';
       return 'info';
     },
+    formatPValue(pValue) {
+      const value = Number(pValue)
+      if (Number.isNaN(value)) return '-'
+      if (value === 0) return '0'
+      if (value < 1e-4) return value.toExponential(2)
+      return value.toFixed(4)
+    },
+    formatQValue(qValue) {
+      const value = Number(qValue)
+      if (Number.isNaN(value)) return '-'
+      if (value === 0) return '0'
+      if (value < 1e-4) return value.toExponential(2)
+      return value.toFixed(4)
+    },
+    formatCI(ciLower, ciUpper) {
+      const low = Number(ciLower)
+      const high = Number(ciUpper)
+      if (Number.isNaN(low) || Number.isNaN(high)) return '-'
+      return `[${low.toFixed(3)}, ${high.toFixed(3)}]`
+    },
     computeConsumptionGroup(dailyAvg) {
       const points = this.scatterPoints || []
       const values = points.map(p => Number(p.consumption || 0)).filter(v => !Number.isNaN(v))
@@ -744,5 +782,18 @@ export default {
 
 .single-input-row {
   margin-bottom: 12px;
+}
+
+.result-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.result-note {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #909399;
 }
 </style>

@@ -22,6 +22,7 @@
         :rules="rules"
         label-position="top"
         @keyup.enter="handleLogin"
+        @submit.prevent="handleLogin"
       >
         <el-form-item label="账号" prop="username">
           <el-input v-model="loginForm.username" placeholder="请输入账号" autocomplete="username" />
@@ -35,22 +36,28 @@
           <el-checkbox v-model="loginForm.remember">记住登录</el-checkbox>
         </div>
 
-        <el-button type="primary" :loading="loading" class="login-button" @click="handleLogin">登录</el-button>
-        <el-button type="text" style="margin-left:12px" @click="openRegister">注册</el-button>
+        <div class="login-actions">
+          <el-button type="primary" :loading="loading" class="login-button" native-type="submit">登录</el-button>
+          <div class="login-links">
+            <el-button type="text" @click="openRegister">注册账号</el-button>
+            <el-button type="text" @click="openForgotPassword">忘记密码</el-button>
+          </div>
+        </div>
+        <div class="login-tip">建议首次登录后及时修改密码，保护账号安全。</div>
       </el-form>
     </div>
 
     <!-- 注册对话框 -->
-    <el-dialog title="注册" v-model="showRegister">
+    <el-dialog title="注册" v-model="showRegister" width="460px" destroy-on-close align-center>
       <el-form ref="registerFormRef" :model="registerForm" :rules="registerRules" label-position="top">
         <el-form-item label="用户名" prop="username">
-          <el-input v-model="registerForm.username" />
+          <el-input v-model="registerForm.username" placeholder="请输入学号" />
         </el-form-item>
         <el-form-item label="密码" prop="password">
-          <el-input type="password" v-model="registerForm.password" />
+          <el-input type="password" v-model="registerForm.password" placeholder="请输入密码" />
         </el-form-item>
         <el-form-item label="确认密码" prop="confirm">
-          <el-input type="password" v-model="registerForm.confirm" />
+          <el-input type="password" v-model="registerForm.confirm" placeholder="请再次输入密码" />
         </el-form-item>
         <el-form-item label="角色" prop="role">
           <el-radio-group v-model="registerForm.role">
@@ -67,6 +74,24 @@
         <el-button type="primary" :loading="regLoading" @click="submitRegisterWrapper">注册</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog title="忘记密码" v-model="showForgotPassword" width="460px" destroy-on-close align-center>
+      <el-form ref="forgotFormRef" :model="forgotForm" :rules="forgotRules" label-position="top">
+        <el-form-item label="用户名" prop="username">
+          <el-input v-model="forgotForm.username" placeholder="请输入账号" />
+        </el-form-item>
+        <el-form-item label="新密码" prop="new_password">
+          <el-input type="password" v-model="forgotForm.new_password" placeholder="请输入新密码" />
+        </el-form-item>
+        <el-form-item label="确认新密码" prop="confirm">
+          <el-input type="password" v-model="forgotForm.confirm" placeholder="请再次输入新密码" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="closeForgotPassword">取消</el-button>
+        <el-button type="primary" :loading="forgotLoading" @click="submitForgotPasswordWrapper">确认重置</el-button>
+      </template>
+    </el-dialog>
     </div>
   </div>
 </template>
@@ -75,7 +100,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { login as loginApi, registerApi, getUserInfo, applyAdmin } from '@/api/user.js'
+import { login as loginApi, registerApi, getUserInfo, applyAdmin, forgotPasswordApi } from '@/api/user.js'
 import {
   clearStoredUserId,
   clearStoredUserInfo,
@@ -89,12 +114,16 @@ const router = useRouter()
 
 const loginFormRef = ref(null)
 const registerFormRef = ref(null)
+const forgotFormRef = ref(null)
 const loading = ref(false)
 const regLoading = ref(false)
+const forgotLoading = ref(false)
 
 const loginForm = ref({ username: '', password: '', remember: true })
 const showRegister = ref(false)
 const registerForm = ref({ username: '', password: '', confirm: '', role: 'user', reason: '' })
+const showForgotPassword = ref(false)
+const forgotForm = ref({ username: '', new_password: '', confirm: '' })
 
 const rules = {
   username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
@@ -126,6 +155,27 @@ const registerRules = {
         callback()
       }
     }, trigger: 'blur' }
+  ]
+}
+
+const forgotRules = {
+  username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
+  new_password: [
+    { required: true, message: '请输入新密码', trigger: 'blur' },
+    { min: 6, message: '新密码至少6位', trigger: 'blur' }
+  ],
+  confirm: [
+    { required: true, message: '请确认新密码', trigger: 'blur' },
+    {
+      validator: (rule, value, callback) => {
+        if (value !== forgotForm.value.new_password) {
+          callback(new Error('两次输入的密码不一致'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'blur'
+    }
   ]
 }
 
@@ -189,6 +239,15 @@ const closeRegister = () => {
   showRegister.value = false
 }
 
+const openForgotPassword = () => {
+  forgotForm.value = { username: '', new_password: '', confirm: '' }
+  showForgotPassword.value = true
+}
+
+const closeForgotPassword = () => {
+  showForgotPassword.value = false
+}
+
 const submitRegisterWrapper = () => {
   if (!registerFormRef.value) return submitRegister()
   registerFormRef.value.validate((valid) => {
@@ -239,6 +298,35 @@ const submitRegister = async () => {
     ElMessage.error(msg)
   } finally {
     regLoading.value = false
+  }
+}
+
+const submitForgotPasswordWrapper = () => {
+  if (!forgotFormRef.value) return submitForgotPassword()
+  forgotFormRef.value.validate((valid) => {
+    if (valid) {
+      submitForgotPassword()
+    } else {
+      ElMessage.warning('请完整填写重置信息')
+    }
+  })
+}
+
+const submitForgotPassword = async () => {
+  forgotLoading.value = true
+  try {
+    const payload = {
+      username: String(forgotForm.value.username || '').trim(),
+      new_password: forgotForm.value.new_password
+    }
+    await forgotPasswordApi(payload)
+    ElMessage.success('密码重置成功，请使用新密码登录')
+    showForgotPassword.value = false
+  } catch (e) {
+    const msg = e?.response?.data?.detail || e?.response?.data?.message || e?.message || '密码重置失败'
+    ElMessage.error(msg)
+  } finally {
+    forgotLoading.value = false
   }
 }
 
@@ -352,8 +440,26 @@ const submitRegister = async () => {
   justify-content: space-between;
   margin-bottom: 12px;
 }
+
+.login-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .login-button {
   width: 100%;
+}
+
+.login-links {
+  display: flex;
+  justify-content: space-between;
+}
+
+.login-tip {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #909399;
 }
 
 @media (max-width: 900px) {

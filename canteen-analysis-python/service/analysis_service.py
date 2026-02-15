@@ -1,3 +1,6 @@
+"""
+分析服务：聚类、漂移检测、相关性等核心算法入口。
+"""
 from schemas.form_dto import ClusterBody, DriftBody, CorrelationBody, BaseBody
 from utils.get_data_summary import get_data_summary, get_data_summary_gpa
 from sklearn.cluster import KMeans
@@ -13,6 +16,7 @@ import numpy as np
 
 
 def normalize_student_id(value):
+    """标准化学号字符串（去空白/去前导 0）。"""
     if value is None:
         return ""
     sid = str(value).strip()
@@ -21,6 +25,7 @@ def normalize_student_id(value):
     return sid
 
 def analysis_cluster(cluster_body:ClusterBody):
+    """消费聚类分析：生成簇中心、样本标签、分布数据与图表点位。"""
     df = get_data_summary(cluster_body)
     if df.empty:
         return {"centers": [], "data": [], "results": [], "clusterData": [], "distributionData": []}
@@ -116,8 +121,6 @@ def analysis_cluster(cluster_body:ClusterBody):
 
         center_vec = centers[label]
         point_vec = scalared_df[df.index.get_loc(sid)]
-        dist = float(np.linalg.norm(point_vec - center_vec))
-        confidence = max(0.0, min(100.0, (1.0 - dist) * 100.0))
         poverty_index = round(1.0 - daily / (centers_df["dailyAvg"].max() + 1e-6), 4)
 
         results.append({
@@ -130,8 +133,7 @@ def analysis_cluster(cluster_body:ClusterBody):
             "dailyAvg": round(daily, 2),
             "dailyCount": round(daily_count, 2),
             "clusterType": cluster_type,
-            "povertyIndex": round(poverty_index, 4),
-            "confidence": round(confidence, 2)
+            "povertyIndex": round(poverty_index, 4)
         })
 
         cluster_points.append({
@@ -159,6 +161,7 @@ def analysis_cluster(cluster_body:ClusterBody):
     }
 
 def analysis_drift(drift_body:DriftBody):
+    """消费漂移检测：基于滑动窗口比较分布差异并计算置信度。"""
     # 1-30 日
     # 1-8 (val1) 8-15 (val2) 15-22 (val3) 22-29
     time_begin = drift_body.timeBegin or drift_body.start_date
@@ -180,8 +183,9 @@ def analysis_drift(drift_body:DriftBody):
     left_time  = time_begin
     middle_time = time_begin + timedelta(days=time_window)
     right_time = time_begin + timedelta(days=time_window*2)
-    # 步长：设为 1 天，生成更密集的采样点
-    step_days = 1
+    # 步长：基于总时长自适应，保证点数充足且不过多
+    max_points = 30
+    step_days = max(1, int(time_duration / max_points))
 
     df_left = get_data_summary(BaseBody(
         college=drift_body.college,
@@ -237,13 +241,20 @@ def analysis_drift(drift_body:DriftBody):
         data_train = df_left.values
         data_test = df_right.values
 
-        min_max_scalar = MinMaxScaler()
-        data_train = min_max_scalar.fit_transform(data_train)
-        data_test = min_max_scalar.transform(data_test)
+        # 数据为空或样本过少时，跳过模型以加速并避免异常
+        if df_left.empty or df_right.empty or data_train.shape[0] < 2 or data_test.shape[0] < 1:
+            p = 1.0
+        else:
+            min_max_scalar = MinMaxScaler()
+            data_train = min_max_scalar.fit_transform(data_train)
+            data_test = min_max_scalar.transform(data_test)
 
-        model = EIkMeans(40)
-        model.build_partition(data_train,data_test.shape[0])
-        p = model.drift_detection2(data_test,0.05)
+            # 动态缩小簇数以降低计算量
+            dynamic_k = max(5, int(np.sqrt(data_train.shape[0])))
+            dynamic_k = min(dynamic_k, 20)
+            model = EIkMeans(dynamic_k)
+            model.build_partition(data_train,data_test.shape[0])
+            p = model.drift_detection2(data_test,0.05)
         p_values.append(p)
         confidence_from_p = max(0.0, min(100.0, (1.0 - float(p)) * 100.0))
 
@@ -271,8 +282,6 @@ def analysis_drift(drift_body:DriftBody):
             before_mean = float(df_left.loc[sid_str].mean()) if sid_str in df_left.index else 0.0
             after_mean = float(df_right.loc[sid_str].mean()) if sid_str in df_right.index else 0.0
             change_rate = float(after_mean - before_mean) / abs(before_mean + 1e-9) * 100 if before_mean != 0 else 0.0
-            # 置信度：基于统计显著性 (1 - p)
-            confidence = confidence_from_p
             info = name_cache.get(sid_str, {})
             results.append({
                 "studentId": sid_str,
@@ -281,7 +290,6 @@ def analysis_drift(drift_body:DriftBody):
                 "beforeDrift": round(before_mean, 2),
                 "afterDrift": round(after_mean, 2),
                 "changeRate": round(change_rate, 2),
-                "confidence": round(confidence, 2),
                 "detectDate": detect_date.isoformat()
             })
         else:
@@ -302,8 +310,6 @@ def analysis_drift(drift_body:DriftBody):
                 before_mean = float(before_mean_series.get(sid, 0.0))
                 after_mean = float(after_mean_series.get(sid, 0.0))
                 change_rate = float(after_mean - before_mean) / abs(before_mean + 1e-9) * 100 if before_mean != 0 else 0.0
-                # 置信度：基于统计显著性 (1 - p)
-                confidence = confidence_from_p
                 info = name_cache.get(sid_str, {})
                 results.append({
                     "studentId": sid_str,
@@ -312,7 +318,6 @@ def analysis_drift(drift_body:DriftBody):
                     "beforeDrift": round(before_mean, 2),
                     "afterDrift": round(after_mean, 2),
                     "changeRate": round(change_rate, 2),
-                    "confidence": round(confidence, 2),
                     "detectDate": detect_date.isoformat()
                 })
 
@@ -443,6 +448,33 @@ def analysis_correlation(correlation_body:CorrelationBody):
 
     # 相关性分析
     method = (getattr(correlation_body, "method", "pearson") or "pearson").lower()
+
+    def calc_corr_ci(corr_value: float, n: int):
+        if n <= 3:
+            return None, None
+        corr_value = max(min(float(corr_value), 0.999999), -0.999999)
+        z = np.arctanh(corr_value)
+        z_se = 1.0 / np.sqrt(n - 3)
+        z_crit = stats.norm.ppf(0.975)
+        low = np.tanh(z - z_crit * z_se)
+        high = np.tanh(z + z_crit * z_se)
+        return float(low), float(high)
+
+    def bh_fdr_adjust(p_values: list[float]) -> list[float]:
+        m = len(p_values)
+        if m == 0:
+            return []
+        indexed = sorted(list(enumerate(p_values)), key=lambda item: item[1])
+        adjusted = [1.0] * m
+        prev = 1.0
+        for rank in range(m, 0, -1):
+            original_index, p_val = indexed[rank - 1]
+            val = min(prev, (float(p_val) * m) / rank)
+            adjusted[original_index] = float(min(max(val, 0.0), 1.0))
+            prev = val
+        return adjusted
+
+    sample_size = int(len(merged))
     factor_map = {
         "breakfast_avg_amount": "早餐均额",
         "lunch_avg_amount": "午餐均额",
@@ -451,9 +483,10 @@ def analysis_correlation(correlation_body:CorrelationBody):
         "monthlyAvg": "月均消费"
     }
     results = []
+    p_values = []
     for col, label in factor_map.items():
         series = merged[col]
-        if series.nunique() < 2:
+        if series.nunique() < 2 or merged["gpa"].nunique() < 2:
             corr, p = 0.0, 1.0
         else:
             if method == "spearman":
@@ -462,7 +495,10 @@ def analysis_correlation(correlation_body:CorrelationBody):
                 corr, p = stats.pearsonr(series, merged["gpa"])
             else:
                 raise HTTPException(status_code=400, detail="不支持的相关性方法")
-        significance = "显著" if p < 0.05 else "不显著"
+        if np.isnan(corr) or np.isnan(p):
+            corr, p = 0.0, 1.0
+
+        ci_low, ci_high = calc_corr_ci(corr, sample_size)
         if corr >= 0.3:
             interp = "正相关"
         elif corr <= -0.3:
@@ -473,9 +509,18 @@ def analysis_correlation(correlation_body:CorrelationBody):
             "factor": label,
             "correlation": float(corr),
             "pValue": float(p),
-            "significance": significance,
+            "ciLower": ci_low,
+            "ciUpper": ci_high,
+            "sampleSize": sample_size,
             "interpretation": interp
         })
+        p_values.append(float(p))
+
+    q_values = bh_fdr_adjust(p_values)
+    for index, result_row in enumerate(results):
+        q_val = q_values[index] if index < len(q_values) else 1.0
+        result_row["qValue"] = float(q_val)
+        result_row["significance"] = "显著" if q_val < 0.05 else "不显著"
 
     student_profile = None
     if correlation_body.studentId:
@@ -546,8 +591,10 @@ def analysis_correlation(correlation_body:CorrelationBody):
             "mergedCount": int(len(merged)),
             "avgDaily": float(merged["dailyAvg"].mean()),
             "avgGpa": float(merged["gpa"].mean()),
+            "sampleSize": sample_size,
             "termUsed": term_used,
             "method": method,
+            "multipleTest": "BH-FDR",
             "fallback": fallback_msg if fallback_msg else None
         }
     }

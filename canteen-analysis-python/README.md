@@ -24,10 +24,13 @@ uvicorn main:app --reload --port 8000
 5. 常用接口：
 - `POST /register` 注册
 - `POST /login` 登录，返回 `access_token`
+- `POST /forgot-password` 忘记密码重置（按用户名重置）
 - `GET /users?page=1&page_size=20` 管理员获取用户列表
 - `POST /change-password` 修改密码
 - `POST /logout` 注销（登出）
 - `GET /logs?page=1&page_size=50` 查询日志
 - `GET /logs/export` 导出日志 CSV（管理员）
+
+默认管理员：`lin` / `061010`（由 SQL 初始化脚本与服务启动时自动校准）。
 
 注意：在开发环境请使用安全的 `SECRET_KEY` 并保护数据库凭据。

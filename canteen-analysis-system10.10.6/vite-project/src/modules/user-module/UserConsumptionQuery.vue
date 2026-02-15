@@ -19,6 +19,16 @@
         <el-table-column prop="amount" label="金额" width="120"/>
         <el-table-column prop="window" label="窗口" width="120"/>
       </el-table>
+      <el-pagination
+        style="margin-top:12px"
+        :current-page="currentPage"
+        :page-size="pageSize"
+        :page-sizes="[10, 20, 50, 100]"
+        layout="total, sizes, prev, pager, next, jumper"
+        :total="total"
+        @size-change="handleSizeChange"
+        @current-change="handleCurrentChange"
+      />
     </el-card>
   </div>
 </template>
@@ -33,16 +43,24 @@ const uid = userInfo.username || userInfo.userId || ''
 
 const form = ref({ start: '', end: '' })
 const records = ref([])
+const currentPage = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
 
 const query = async () => {
   if (!uid) return
   try {
-    const params = { studentId: uid }
+    const params = {
+      studentId: uid,
+      page: currentPage.value,
+      pageSize: pageSize.value
+    }
     if (form.value.start) params.timeBegin = form.value.start
     if (form.value.end) params.timeEnd = form.value.end
     const res = await getConsumptionData(params)
     // getConsumptionData 使用 request 实例，会返回接口的 data 部分或自定义结构
     const raw = res?.records || res?.data || res || []
+    total.value = Number(res?.total || res?.data?.total || raw.length || 0)
     records.value = (raw || []).map(r => {
       const timeRaw = r.consumptionTime || r.consumption_time || r.consume_time || r.consumeTime || ''
       const timeStr = typeof timeRaw === 'string' ? timeRaw.replace('T',' ') : (timeRaw ? new Date(timeRaw).toISOString().replace('T',' ').slice(0,19) : '')
@@ -57,12 +75,21 @@ const query = async () => {
   }
 }
 
+const handleSizeChange = (size) => {
+  pageSize.value = size
+  currentPage.value = 1
+  query()
+}
+
+const handleCurrentChange = (page) => {
+  currentPage.value = page
+  query()
+}
+
 onMounted(() => {
-  // 默认查询最近 7 天
-  const d2 = new Date()
-  const d1 = new Date(Date.now() - 6 * 24 * 3600 * 1000)
-  form.value.start = d1.toISOString().slice(0,10)
-  form.value.end = d2.toISOString().slice(0,10)
+  // 默认不限制日期，避免与历史导入数据年份不一致导致空结果
+  form.value.start = ''
+  form.value.end = ''
   query()
 })
 </script>

@@ -1,0 +1,47 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs / temp
+*.log
+*.tmp
+*.swp
+
+# Python
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.pytest_cache/
+**/.mypy_cache/
+**/.venv/
+**/venv/
+**/env/
+
+# Node
+**/node_modules/
+**/dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Java / Maven / Gradle
+**/target/
+**/.mvn/
+**/build/
+**/.gradle/
+
+# Docker runtime data (optional: keep db init SQL under docker/mysql/init)
+mysql_data/
+
+# Local debug artifacts from troubleshooting
+student_info_api*.json
+after_import_stat.json
+java_stat.json
+import_*.log
+mysql_container.log
+db_counts.txt
+docker_ps.txt
+java_stat.err

@@ -1,10 +1,12 @@
+// API 调用封装：Java 后端 + FastAPI 分析服务
 import axios from 'axios'
 import request from "@/utils/request";
 import { getAuthToken } from "@/utils/auth";
 
 // 使用环境变量配置API基础地址
 // API_BASE_URL 为空时，由 request 实例的 /api 基础前缀负责；避免 /api/api 的重复
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+const RAW_API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+const API_BASE_URL = RAW_API_BASE_URL === '/api' ? '' : RAW_API_BASE_URL;
 const FASTAPI_BASE_URL = import.meta.env.VITE_FASTAPI_BASE_URL || '/fastapi';
 
 // 独立的 FastAPI 客户端，防止被 Java 前缀再次代理
@@ -298,7 +300,12 @@ export const deleteSystemLogs = (logIds) => {
 
 // ========== 用户管理（FastAPI） ==========
 export const getUsers = (params) => {
-    const queryParams = buildParams(params)
+    const queryParams = {}
+    if (params?.page !== undefined) queryParams.page = Number(params.page)
+    const pageSizeVal = params?.page_size ?? params?.pageSize
+    if (pageSizeVal !== undefined) queryParams.page_size = Number(pageSizeVal)
+    if (params?.username !== undefined && params?.username !== '') queryParams.username = String(params.username)
+    if (params?.is_admin !== undefined && params?.is_admin !== '') queryParams.is_admin = Boolean(Number(params.is_admin))
     return fastapiRequest.get(`/users`, { params: queryParams })
 }
 
@@ -326,6 +333,10 @@ export const login = (data) => {
 
 export const registerApi = (data) => {
     return fastapiRequest.post(`/register`, data)
+}
+
+export const forgotPasswordApi = (data) => {
+    return fastapiRequest.post(`/forgot-password`, data)
 }
 
 export const logout = () => {
@@ -392,6 +403,7 @@ export default {
     getAdminApplications,
     approveAdminApplication,
     registerApi,
+    forgotPasswordApi,
 
     // 登录
     login,

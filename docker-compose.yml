@@ -1,0 +1,65 @@
+services:
+  mysql:
+    image: lln1010/1010-mysql:8.0
+    container_name: canteen-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456
+      MYSQL_DATABASE: back_end
+      TZ: Asia/Shanghai
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p123456"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    networks:
+      - canteen-net
+
+  backend:
+    image: lln1010/1010-backend:latest
+    container_name: canteen-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: root
+      MYSQL_PASSWORD: 123456
+      MYSQL_DATABASE: back_end
+      FASTAPI_BASE_URL: http://127.0.0.1:8000
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+      REDIS_DB: 0
+      TZ: Asia/Shanghai
+    expose:
+      - "8080"
+      - "8000"
+    networks:
+      - canteen-net
+
+  frontend:
+    image: lln1010/1010-frontend:latest
+    container_name: canteen-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+    networks:
+      - canteen-net
+
+volumes:
+  mysql_data:
+
+networks:
+  canteen-net:
+    driver: bridge
