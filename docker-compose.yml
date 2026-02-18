@@ -1,6 +1,6 @@
 services:
   mysql:
-    image: lln1010/1010-mysql:8.0
+    image: lln1010/1010-mysql:${MYSQL_TAG:-8.0}
     container_name: canteen-mysql
     restart: unless-stopped
     environment:
@@ -22,7 +22,7 @@ services:
       - canteen-net
 
   backend:
-    image: lln1010/1010-backend:latest
+    image: lln1010/1010-backend:${BACKEND_TAG:-latest}
     container_name: canteen-backend
     restart: unless-stopped
     depends_on:
@@ -47,7 +47,7 @@ services:
       - canteen-net
 
   frontend:
-    image: lln1010/1010-frontend:latest
+    image: lln1010/1010-frontend:${FRONTEND_TAG:-latest}
     container_name: canteen-frontend
     restart: unless-stopped
     depends_on:

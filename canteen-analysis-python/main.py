@@ -2,6 +2,8 @@
 FastAPI 后端入口：用户与权限、日志、数据分析相关接口。
 """
 import json
+import csv
+import io
 from typing import Optional
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Depends, Query, HTTPException, status, Body
@@ -455,15 +457,42 @@ def export_logs(
     rows = cursor.fetchall()
     conn.close()
 
+    def excel_text(val, force_text=False):
+        if val is None:
+            return ''
+        text = str(val)
+        if force_text or (text.isdigit() and len(text) >= 11):
+            return f'="{text}"'
+        return text
+
     def gen():
-        yield 'id,user_id,username,action,detail,created_at\n'
+        yield '\ufeff'
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['id', 'user_id', 'username', 'action', 'detail', 'created_at'])
+        yield output.getvalue()
+        output.seek(0)
+        output.truncate(0)
+
         for r in rows:
             created = r[5].strftime('%Y-%m-%d %H:%M:%S') if r[5] else ''
-            detail = r[4].replace('\n', ' ').replace('\r', ' ') if r[4] else ''
-            line = f'{r[0]},{r[1]},{r[2]},{r[3]},{detail},{created}\n'
-            yield line
+            detail = (r[4] or '').replace('\n', ' ').replace('\r', ' ')
+            writer.writerow([
+                excel_text(r[0]),
+                excel_text(r[1]),
+                excel_text(r[2], force_text=True),
+                r[3] or '',
+                detail,
+                excel_text(created, force_text=True)
+            ])
+            yield output.getvalue()
+            output.seek(0)
+            output.truncate(0)
 
-    return StreamingResponse(gen(), media_type='text/csv')
+    headers = {
+        'Content-Disposition': f'attachment; filename=logs_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+    }
+    return StreamingResponse(gen(), media_type='text/csv; charset=utf-8', headers=headers)
 
 
 # 日志搜索（支持按用户名、操作类型、日期范围过滤）

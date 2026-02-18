@@ -10,13 +10,13 @@
                 type="daterange"
                 start-placeholder="开始日期"
                 end-placeholder="结束日期"
-                value-format="yyyy-MM-dd"
+                value-format="YYYY-MM-DD"
                 style="width:320px"
               />
               <el-button type="primary" @click="fetchLogs">搜索</el-button>
             </div>
             <div>
-              <el-button @click="exportCsv" type="primary" style="margin-right:8px">导出 CSV</el-button>
+              <el-button @click="exportExcel" type="primary" style="margin-right:8px">导出 Excel</el-button>
               <el-button type="danger" @click="deleteSelected" :disabled="selected.length===0">删除选中</el-button>
             </div>
           </div>
@@ -46,8 +46,8 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getSystemLogs, exportSystemLogs, searchLogs, deleteSystemLogs } from '@/api/user.js'
-import { downloadBlob } from '@/utils/download'
+import { searchLogs, deleteSystemLogs } from '@/api/user.js'
+import { exportXlsx } from '@/utils/download'
 
 const logs = ref([])
 const page = ref(1)
@@ -56,7 +56,7 @@ const total = ref(0)
 const filters = ref({ username: '', action: '', range: [] })
 
 const buildParams = (p = page.value) => {
-  const params = { page: p, pageSize: page_size.value }
+  const params = { page: p, page_size: page_size.value }
   if (filters.value.username) params.username = filters.value.username
   if (filters.value.action) params.action = filters.value.action
   if (filters.value.range && filters.value.range.length === 2) {
@@ -77,10 +77,42 @@ const fetchLogs = async (p = page.value) => {
   }
 }
 
-const exportCsv = async () => {
+const fetchAllLogsForExport = async () => {
+  const maxPages = 200
+  const exportPageSize = 1000
+  let p = 1
+  let all = []
+  while (p <= maxPages) {
+    const res = await searchLogs({ ...buildParams(p), page_size: exportPageSize })
+    const rows = Array.isArray(res?.items) ? res.items : []
+    all = all.concat(rows)
+    if (rows.length < exportPageSize) break
+    p += 1
+  }
+  return all
+}
+
+const exportExcel = async () => {
   try {
-    const blob = await exportSystemLogs(buildParams(1))
-    downloadBlob(blob, `logs_${Date.now()}.csv`, 'text/csv')
+    const rows = await fetchAllLogsForExport()
+    if (!rows.length) {
+      ElMessage.warning('无可导出日志')
+      return
+    }
+    await exportXlsx(
+      rows,
+      [
+        { label: 'ID', key: 'id' },
+        { label: '用户ID', key: 'user_id' },
+        { label: '用户名', key: 'username' },
+        { label: '操作', key: 'action' },
+        { label: '详情', key: 'detail' },
+        { label: '时间', key: 'created_at' }
+      ],
+      `logs_${Date.now()}.xlsx`,
+      '系统日志'
+    )
+    ElMessage.success('导出成功')
   } catch (e) {
     ElMessage.error(e.response?.data?.message || e.message || '导出失败')
   }

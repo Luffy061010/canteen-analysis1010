@@ -284,8 +284,8 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search, Refresh, Download, View, List, SuccessFilled, Warning, User } from '@element-plus/icons-vue'
-import { getSystemLogs, getSystemLogStats, exportSystemLogs } from '@/api/user.js'
-import { downloadBlob } from '@/utils/download'
+import { getSystemLogs, getSystemLogStats } from '@/api/user.js'
+import { exportXlsx } from '@/utils/download'
 
 // 查询表单数据
 const queryForm = reactive({
@@ -410,8 +410,24 @@ const handleReset = () => {
 const handleExport = async () => {
   try {
     loading.value = true
-    const blob = await exportSystemLogs(buildParams())
-    downloadBlob(blob, `system_logs_${Date.now()}.csv`, 'text/csv')
+    const rows = Array.isArray(logList.value) ? logList.value : []
+    if (!rows.length) {
+      ElMessage.warning('无可导出日志')
+      return
+    }
+    await exportXlsx(
+      rows,
+      [
+        { label: 'ID', key: 'id' },
+        { label: '用户ID', key: 'user_id' },
+        { label: '用户名', key: 'username' },
+        { label: '操作', key: 'action' },
+        { label: '详情', key: 'detail' },
+        { label: '时间', key: 'created_at' }
+      ],
+      `system_logs_${Date.now()}.xlsx`,
+      '系统日志'
+    )
     ElMessage.success('日志导出成功')
   } catch (error) {
     ElMessage.error('日志导出失败')

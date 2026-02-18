@@ -8,7 +8,7 @@
     <el-card style="margin-top:12px">
       <template #header>最近消费趋势</template>
       <div ref="chart" style="width:100%;height:320px"></div>
-      <div style="margin-top:12px">总额：¥{{ total }}，平均日：¥{{ avgDaily }}，趋势斜率：{{ slope }}，最常去窗口：{{ trendMeta.busiestWindow }}（次数：{{ trendMeta.visits }}）</div>
+      <div style="margin-top:12px">总额：¥{{ total }}，平均日消费：¥{{ avgDaily }}，趋势斜率：{{ slope }}，最常去窗口：{{ trendMeta.busiestWindow }}（次数：{{ trendMeta.visits }}）</div>
     </el-card>
   </div>
 </template>

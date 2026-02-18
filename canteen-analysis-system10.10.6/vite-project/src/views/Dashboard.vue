@@ -97,6 +97,8 @@ const statistics = ref({
 const povertyConsumptionData = ref([])
 const loading = ref(false)
 const trendDataState = ref({ dates: [], values: [] })
+const DASHBOARD_TREND_START = '2024-09-01'
+const DASHBOARD_TREND_END = '2024-09-30'
 
 // 数据安全处理
 const safeValue = (val) => {
@@ -163,7 +165,7 @@ const fetchAllConsumptionRecords = async ({ timeBegin, timeEnd }) => {
   return all
 }
 
-const buildTrendFromRecords = (records = []) => {
+const buildTrendFromRecords = (records = [], startDate, endDate) => {
   if (!records.length) return { dates: [], values: [] }
 
   const dailyMap = {}
@@ -173,22 +175,20 @@ const buildTrendFromRecords = (records = []) => {
     dailyMap[day] = (dailyMap[day] || 0) + safeValue(item?.amount ?? item?.money ?? 0)
   })
 
-  const dateList = Object.keys(dailyMap).sort()
-  if (!dateList.length) return { dates: [], values: [] }
-
-  const latestDate = dateList[dateList.length - 1]
-  const latest = new Date(latestDate)
-  if (Number.isNaN(latest.getTime())) return { dates: [], values: [] }
-
-  const dates = []
-  const values = []
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date(latest)
-    d.setDate(d.getDate() - i)
-    const key = d.toISOString().slice(0, 10)
-    dates.push(key.slice(5))
-    values.push(Number((dailyMap[key] || 0).toFixed(2)))
+  const start = new Date(startDate)
+  const end = new Date(endDate)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) {
+    return { dates: [], values: [] }
   }
+
+  const startKey = startDate
+  const endKey = endDate
+  const dateKeys = Object.keys(dailyMap)
+    .filter((key) => key >= startKey && key <= endKey)
+    .sort()
+
+  const dates = dateKeys.map((key) => key.slice(5))
+  const values = dateKeys.map((key) => Number((dailyMap[key] || 0).toFixed(2)))
 
   return { dates, values }
 }
@@ -200,7 +200,7 @@ const loadStatistics = async () => {
     const [stat, studentStat, allRecords] = await Promise.all([
       getSystemStatus().catch(() => null),
       getStudentInfo({ page: 1, pageSize: 1 }).catch(() => null),
-      fetchAllConsumptionRecords({ timeBegin: '1970-01-01', timeEnd: '2099-12-31' }).catch(() => [])
+      fetchAllConsumptionRecords({ timeBegin: DASHBOARD_TREND_START, timeEnd: DASHBOARD_TREND_END }).catch(() => [])
     ])
 
     const statSource = stat && typeof stat === 'object' && stat.data ? stat.data : stat
@@ -239,7 +239,7 @@ const loadStatistics = async () => {
       monthlyConsumption: monthlyConsumption || fallbackTotal
     }
 
-    trendDataState.value = buildTrendFromRecords(allRecords)
+    trendDataState.value = buildTrendFromRecords(allRecords, DASHBOARD_TREND_START, DASHBOARD_TREND_END)
   } catch (error) {
     console.error('加载统计数据失败:', error)
     // 兜底：当 /system/status 不可用时回退到消费统计与学生数
@@ -337,7 +337,7 @@ const initConsumptionTrend = (trendData = null) => {
 
       const option = {
         title: {
-          text: '最近30天消费趋势',
+          text: '近期消费趋势',
           left: 'center',
           textStyle: {
             fontSize: 16,

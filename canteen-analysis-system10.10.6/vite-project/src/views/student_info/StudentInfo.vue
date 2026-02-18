@@ -3,10 +3,9 @@ import {ref, onMounted, watch, nextTick} from 'vue'
 import * as echarts from 'echarts'
 import { getStudentInfo } from '@/api/user.js'
 import { getStudentScores } from '@/api/user.js'
-import { exportStudents } from '@/api/user.js'
 import { ElMessage } from 'element-plus'
 import {COLLEGES_MAJORS, generateClassNames} from '@/utils/const_value.js'
-import { downloadBlob, exportCsv } from '@/utils/download'
+import { exportXlsx } from '@/utils/download'
 
 const queryForm = ref({
   college: '',
@@ -295,27 +294,13 @@ const fetchAllStudentsForExport = async () => {
 
 const handleExport = async () => {
   try {
-    const params = buildQueryParams()
-    delete params.page
-    delete params.pageSize
-    const blob = await exportStudents(params)
-    if (blob instanceof Blob) {
-      downloadBlob(blob, `students_${Date.now()}.csv`, 'text/csv')
-      ElMessage.success('学生数据导出成功')
-      return
-    }
-  } catch (error) {
-    console.warn('后端导出失败，尝试前端导出', error)
-  }
-
-  try {
     loading.value = true
     const rows = await fetchAllStudentsForExport()
     if (!rows.length) {
       ElMessage.warning('无可导出数据')
       return
     }
-    exportCsv(
+    await exportXlsx(
       rows,
       [
         { label: '学号', key: 'studentId' },
@@ -327,7 +312,8 @@ const handleExport = async () => {
         { label: '年级', key: 'grade' },
         { label: '联系电话', key: 'phone' }
       ],
-      `students_${Date.now()}.csv`
+      `students_${Date.now()}.xlsx`,
+      '学生信息'
     )
     ElMessage.success('学生数据导出成功')
   } catch (error) {

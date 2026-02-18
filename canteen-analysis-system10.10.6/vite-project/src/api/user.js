@@ -1,7 +1,8 @@
 // API 调用封装：Java 后端 + FastAPI 分析服务
 import axios from 'axios'
 import request from "@/utils/request";
-import { getAuthToken } from "@/utils/auth";
+import router from '@/router/index'
+import { clearAuthToken, clearStoredUserInfo, getAuthToken } from "@/utils/auth";
 
 // 使用环境变量配置API基础地址
 // API_BASE_URL 为空时，由 request 实例的 /api 基础前缀负责；避免 /api/api 的重复
@@ -15,6 +16,31 @@ const fastapiRequest = axios.create({
     timeout: 300000,
 });
 
+let fastapiUnauthorizedRedirecting = false
+
+const formatDateOnly = (input) => {
+    if (input === null || input === undefined || input === '') return ''
+
+    if (Object.prototype.toString.call(input) === '[object Date]') {
+        if (Number.isNaN(input.getTime())) return ''
+        const year = input.getFullYear()
+        const month = String(input.getMonth() + 1).padStart(2, '0')
+        const day = String(input.getDate()).padStart(2, '0')
+        return `${year}-${month}-${day}`
+    }
+
+    const raw = String(input).trim()
+    if (!raw) return ''
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
+
+    const parsed = new Date(raw)
+    if (Number.isNaN(parsed.getTime())) return ''
+    const year = parsed.getFullYear()
+    const month = String(parsed.getMonth() + 1).padStart(2, '0')
+    const day = String(parsed.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+}
+
 fastapiRequest.interceptors.request.use((config) => {
     const token = getAuthToken();
     if (token) {
@@ -25,7 +51,20 @@ fastapiRequest.interceptors.request.use((config) => {
 
 fastapiRequest.interceptors.response.use(
     (response) => response.data,
-    (error) => Promise.reject(error)
+    (error) => {
+        if (error?.response?.status === 401) {
+            clearAuthToken()
+            clearStoredUserInfo()
+            if (!fastapiUnauthorizedRedirecting) {
+                fastapiUnauthorizedRedirecting = true
+                const redirect = router.currentRoute?.value?.fullPath || '/'
+                router.replace({ path: '/login', query: { redirect } }).finally(() => {
+                    fastapiUnauthorizedRedirecting = false
+                })
+            }
+        }
+        return Promise.reject(error)
+    }
 );
 
 // 统一参数处理函数
@@ -37,11 +76,15 @@ const buildParams = (form) => {
         'grade': 'grade',
         'college': 'college',
         'major': 'major',
+        'username': 'username',
+        'action': 'action',
+        'user_id': 'user_id',
         'class': 'className',
         'className': 'className',
         'studentId': 'studentId',
         'page': 'page',
         'pageSize': 'pageSize',
+        'page_size': 'page_size',
         'timeBegin': 'timeBegin',
         'timeEnd': 'timeEnd',
         'time_begin': 'time_begin',
@@ -68,13 +111,21 @@ const buildParams = (form) => {
         const value = form[key]
         if (value !== null && value !== undefined && value !== '') {
             // 数值类型（分页）保持数字，其他转字符串
-            if (paramKey === 'page' || paramKey === 'pageSize') {
+            if (paramKey === 'page' || paramKey === 'pageSize' || paramKey === 'page_size') {
                 const num = Number(value)
                 if (!Number.isNaN(num)) {
                     params[paramKey] = num
                 }
             } else {
-                params[paramKey] = String(value)
+                const isDateParam = ['timeBegin', 'timeEnd', 'time_begin', 'time_end', 'start_date', 'end_date'].includes(paramKey)
+                if (isDateParam) {
+                    const normalized = formatDateOnly(value)
+                    if (normalized) {
+                        params[paramKey] = normalized
+                    }
+                } else {
+                    params[paramKey] = String(value)
+                }
             }
         }
     })

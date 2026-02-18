@@ -213,7 +213,7 @@
 
 <script>
 import { getConsumption, getConsumptionData, getStudentInfo } from '@/api/user.js'
-import { exportCsv } from '@/utils/download'
+import { exportXlsx } from '@/utils/download'
 import { COLLEGES_MAJORS, generateClassNames } from '@/utils/const_value.js'
 
 export default {
@@ -349,7 +349,7 @@ export default {
           this.$message.warning('无可导出数据')
           return
         }
-        exportCsv(
+        await exportXlsx(
           rows,
           [
             { label: '学号', key: 'uid' },
@@ -360,7 +360,8 @@ export default {
             { label: '消费金额', key: 'amount' },
             { label: '消费窗口', key: 'window' }
           ],
-          `consumption_${Date.now()}.csv`
+          `consumption_${Date.now()}.xlsx`,
+          '消费明细'
         )
         this.$message.success('导出成功')
       } catch (error) {
