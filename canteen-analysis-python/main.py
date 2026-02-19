@@ -4,6 +4,7 @@ FastAPI 后端入口：用户与权限、日志、数据分析相关接口。
 import json
 import csv
 import io
+import time
 from typing import Optional
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Depends, Query, HTTPException, status, Body
@@ -572,8 +573,27 @@ def delete_logs(body: LogDeleteBody, current_user=Depends(admin_required)):
     return {'msg': '删除成功', 'deleted': len(ids)}
 
 def get_db():
-    conn = pymysql.connect(**DB_CONFIG)
+    cfg = dict(DB_CONFIG)
+    cfg.setdefault('connect_timeout', 5)
+    cfg.setdefault('read_timeout', 30)
+    cfg.setdefault('write_timeout', 30)
+    conn = pymysql.connect(**cfg)
     return conn
+
+
+def wait_for_db_ready(max_retries: int = 60, interval_seconds: int = 2):
+    last_error = None
+    for i in range(1, max_retries + 1):
+        try:
+            conn = get_db()
+            conn.close()
+            print(f"[startup] mysql is ready (attempt {i}/{max_retries})")
+            return
+        except Exception as e:
+            last_error = e
+            print(f"[startup] waiting mysql ({i}/{max_retries}): {e}")
+            time.sleep(interval_seconds)
+    raise RuntimeError(f"mysql not ready after retries: {last_error}")
 
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode('utf-8')).hexdigest()
@@ -600,8 +620,13 @@ def ensure_default_admin_account():
 
 @app.on_event('startup')
 def bootstrap_security_defaults():
-    ensure_default_admin_account()
-    ensure_admin_requests_table()
+    try:
+        wait_for_db_ready(max_retries=90, interval_seconds=2)
+        ensure_default_admin_account()
+        ensure_admin_requests_table()
+    except Exception as e:
+        # 不阻断服务启动，避免因数据库就绪时序导致整个容器退出
+        print(f"[startup] bootstrap security defaults skipped: {e}")
 
 def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()

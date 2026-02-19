@@ -1,9 +1,10 @@
 # 镜像离线分发清单（docker save/load）
 
-适用于你当前三容器方案：
+适用于你当前四容器方案：
 
 - `canteen-frontend`
-- `canteen-backend`
+- `canteen-python`
+- `canteen-java`
 - `mysql:8.0`
 
 ## A. 发送方（你）执行
@@ -14,14 +15,14 @@
 # 1) 先导出数据库 SQL（确保别人导入的是你最新数据）
 ./scripts/export-back_end-dump.ps1 -HostName 127.0.0.1 -Port 3306 -User root -Password 123456 -Database back_end
 
-# 2) 构建三容器所需镜像
+# 2) 构建四容器所需镜像
 docker compose build
 
 # 3) 查看 compose 生成的镜像名（通常是 目录名_服务名）
-docker image ls | findstr "frontend backend"
+docker image ls | findstr "frontend python java"
 
-# 4) 打包镜像（按你本机实际名字替换 canteen-frontend / canteen-backend）
-docker save -o canteen-images.tar canteen-frontend canteen-backend mysql:8.0
+# 4) 打包镜像（按你本机实际名字替换）
+docker save -o canteen-images.tar canteen-frontend canteen-python canteen-java mysql:8.0
 
 # 5) （可选）压缩以减小体积
 tar -czf canteen-images.tar.gz canteen-images.tar
@@ -71,5 +72,6 @@ docker image ls
 
 # 示例：把导入后的名字重标记为 compose 需要的名字
 docker tag <导入后的前端镜像ID或名字> canteen-frontend
-docker tag <导入后的后端镜像ID或名字> canteen-backend
+docker tag <导入后的Python镜像ID或名字> canteen-python
+docker tag <导入后的Java镜像ID或名字> canteen-java
 ```

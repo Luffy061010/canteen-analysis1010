@@ -1,54 +1,49 @@
 # 校园食堂消费分析系统（Docker 部署）
 
-本仓库支持“公开仓库 + Docker Hub 镜像”一键部署：对方无需你手工传文件。
+本项目固定为 4 个容器：
 
-## 1. 对外发布前（你）
+- `frontend`：Vue + Nginx
+- `python`：FastAPI
+- `java`：Spring Boot
+- `mysql`：MySQL 8.0
 
-1. 将前端/后端镜像推送到 Docker Hub（建议打版本标签）：
+镜像版本固定为 `v1.0.0`，数据库数据来自仓库内 `docker/mysql/init/003_back_end_data.sql`，首次部署会自动导入。
 
-- `lln1010/1010-frontend:vX.Y.Z`
-- `lln1010/1010-backend:vX.Y.Z`
-- `lln1010/1010-mysql:8.0`
+## 1. 你发布系统（上传到 Docker Hub）
 
-1. 更新版本说明（可选）：
+在项目根目录执行：
 
-- 复制 `.env.example` 为 `.env` 并写入本次版本标签
+- `release.cmd`
 
-1. 提交并推送仓库：
+会构建并推送以下镜像：
 
-- `git add .`
-- `git commit -m "release: vX.Y.Z"`
-- `git push`
+- `lln1010/1010-frontend:v1.0.0`
+- `lln1010/1010-python:v1.0.0`
+- `lln1010/1010-java:v1.0.0`
 
-## 2. 首次部署（对方）
+## 2. 他人命令行部署（无需你额外传数据库文件）
 
-1. 克隆仓库：
+```bash
+git clone <你的仓库地址>
+cd <仓库目录>
+docker compose pull
+docker compose up -d
+```
 
-- `git clone <你的公开仓库地址>`
-- `cd <仓库目录>`
+访问：`http://localhost`
 
-1. 可选：固定镜像版本：
+## 3. 数据库导入说明
 
-- `copy .env.example .env`
-- 编辑 `.env` 中 `FRONTEND_TAG`、`BACKEND_TAG`
+- MySQL 在 `docker compose up -d` 的首次初始化（空卷）时，会自动执行 `docker/mysql/init/*.sql`
+- 如需重新导入数据：
 
-1. 启动：
+```bash
+docker compose down -v
+docker compose up -d
+```
 
-- 双击 `deploy.cmd`
-- 或执行：`docker compose pull` / `docker compose up -d`
+## 4. 常用命令
 
-1. 访问：
-
-- `http://localhost`
-
-## 3. 后续升级（对方）
-
-- `git pull`
-- `docker compose pull`
-- `docker compose up -d`
-
-## 4. 常见问题
-
-- 端口占用：修改 `docker-compose.yml` 的端口映射
-- 数据要重置：`docker compose down -v` 后再 `docker compose up -d`
-- 容器状态：`docker compose ps`
+- 查看状态：`docker compose ps`
+- 查看日志：`docker compose logs -f`
+- 更新版本（同标签重拉）：`docker compose pull && docker compose up -d`

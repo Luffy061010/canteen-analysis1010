@@ -2,7 +2,7 @@ FROM node:20-alpine AS builder
 WORKDIR /build
 
 COPY canteen-analysis-system10.10.6/vite-project/package*.json ./
-RUN npm ci
+RUN npm install --no-audit --no-fund
 
 COPY canteen-analysis-system10.10.6/vite-project ./
 RUN npm run build

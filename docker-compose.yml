@@ -1,6 +1,6 @@
 services:
   mysql:
-    image: lln1010/1010-mysql:${MYSQL_TAG:-8.0}
+    image: mysql:8.0
     container_name: canteen-mysql
     restart: unless-stopped
     environment:
@@ -21,9 +21,9 @@ services:
     networks:
       - canteen-net
 
-  backend:
-    image: lln1010/1010-backend:${BACKEND_TAG:-latest}
-    container_name: canteen-backend
+  python:
+    image: lln1010/1010-python:v1.0.0
+    container_name: canteen-python
     restart: unless-stopped
     depends_on:
       mysql:
@@ -34,24 +34,53 @@ services:
       MYSQL_USER: root
       MYSQL_PASSWORD: 123456
       MYSQL_DATABASE: back_end
-      FASTAPI_BASE_URL: http://127.0.0.1:8000
-      REDIS_HOST: 127.0.0.1
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+      REDIS_DB: 0
+      TZ: Asia/Shanghai
+    expose:
+      - "8000"
+    networks:
+      canteen-net:
+        aliases:
+          - python
+
+  java:
+    image: lln1010/1010-java:v1.0.0
+    container_name: canteen-java
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      python:
+        condition: service_started
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: root
+      MYSQL_PASSWORD: 123456
+      MYSQL_DATABASE: back_end
+      FASTAPI_BASE_URL: http://python:8000
+      REDIS_HOST: localhost
       REDIS_PORT: 6379
       REDIS_PASSWORD: ""
       REDIS_DB: 0
       TZ: Asia/Shanghai
     expose:
       - "8080"
-      - "8000"
     networks:
-      - canteen-net
+      canteen-net:
+        aliases:
+          - java
 
   frontend:
-    image: lln1010/1010-frontend:${FRONTEND_TAG:-latest}
+    image: lln1010/1010-frontend:v1.0.0
     container_name: canteen-frontend
     restart: unless-stopped
     depends_on:
-      - backend
+      - java
+      - python
     ports:
       - "80:80"
     networks:

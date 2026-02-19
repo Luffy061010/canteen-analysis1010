@@ -36,15 +36,15 @@ echo [3/5] Start services
 docker compose up -d >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :fail
 
-echo [4/5] Import database dump
-docker exec canteen-mysql mysql -uroot -p123456 back_end -e "source /docker-entrypoint-initdb.d/003_back_end_data.sql" >> "%LOGFILE%" 2>&1
-if errorlevel 1 goto :fail
+echo [4/5] Wait MySQL healthy
+docker compose ps >> "%LOGFILE%" 2>&1
 
 echo [5/5] Health check
 docker compose ps >> "%LOGFILE%" 2>&1
 
 echo.
 echo Deployment completed.
+echo MySQL will auto-import SQL from docker/mysql/init on first boot after down -v.
 echo Open: http://localhost
 echo Logs: %cd%\%LOGFILE%
 pause
