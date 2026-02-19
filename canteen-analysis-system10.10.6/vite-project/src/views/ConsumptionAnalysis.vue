@@ -14,7 +14,7 @@
         <el-tab-pane label="消费漂移检测" name="drift-detection">
           <router-view />
         </el-tab-pane>
-        <el-tab-pane label="贫困生鉴别" name="poverty-identification">
+        <el-tab-pane label="贫困生识别" name="poverty-identification">
           <router-view />
         </el-tab-pane>
         <el-tab-pane label="成绩关联分析" name="score-correlation">

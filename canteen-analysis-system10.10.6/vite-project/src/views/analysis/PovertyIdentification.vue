@@ -3,7 +3,7 @@
   <div class="poverty-identification">
     <el-card>
       <template #header>
-        <span>贫困生鉴别</span>
+        <span>贫困生识别</span>
       </template>
 
       <!-- 筛选条件 -->

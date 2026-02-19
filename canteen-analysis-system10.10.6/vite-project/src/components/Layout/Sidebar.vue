@@ -38,7 +38,7 @@
 
           <el-menu-item index="/consumption-analysis/data-query">
             <el-icon><TrendCharts /></el-icon>
-            <span>消费数据查询</span>
+            <span>消费数据统计</span>
           </el-menu-item>
 
           <el-menu-item index="/consumption-analysis/drift-detection">
@@ -48,7 +48,7 @@
 
           <el-menu-item index="/consumption-analysis/poverty-identification">
             <el-icon><Star /></el-icon>
-            <span>贫困生鉴别</span>
+            <span>贫困生识别</span>
           </el-menu-item>
 
           <el-menu-item index="/consumption-analysis/score-correlation">

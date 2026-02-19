@@ -45,7 +45,7 @@
             <el-option label="全部模块" value="" />
             <el-option label="学生信息管理" value="student_info" />
             <el-option label="消费信息查询" value="consumption_query" />
-            <el-option label="贫困生鉴别" value="poverty_identification" />
+            <el-option label="贫困生识别" value="poverty_identification" />
             <el-option label="成绩关联分析" value="score_correlation" />
             <el-option label="系统管理" value="system_management" />
           </el-select>
