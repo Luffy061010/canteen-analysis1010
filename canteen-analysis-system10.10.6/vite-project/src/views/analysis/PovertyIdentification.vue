@@ -110,7 +110,7 @@
       <!-- 鉴别结果 -->
       <el-card style="margin-top: 20px;">
         <template #header>
-          <span>贫困生鉴别结果</span>
+          <span>贫困生识别结果</span>
         </template>
         <el-table :data="pagedPovertyResults" style="width: 100%">
           <el-table-column prop="studentId" label="学号" width="140">

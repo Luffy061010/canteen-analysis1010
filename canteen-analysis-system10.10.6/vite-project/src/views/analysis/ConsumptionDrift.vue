@@ -1,9 +1,9 @@
 <template>
-  <!-- 页面：消费漂移检测与趋势展示 -->
+  <!-- 页面：消费概念漂移检测 -->
   <div class="consumption-drift">
     <el-card>
       <template #header>
-        <span>消费漂移检测</span>
+        <span>概念漂移检测</span>
       </template>
 
       <!-- 筛选条件 -->
@@ -44,7 +44,7 @@
         </el-row>
 
         <el-row :gutter="20">
-          <el-col :span="8">
+          <el-col :span="6">
             <el-form-item label="时间窗口">
               <el-select v-model="queryForm.timeWindow" placeholder="请选择时间窗口" style="width: 100%">
                 <el-option label="7天" value="7"></el-option>
@@ -53,7 +53,7 @@
               </el-select>
             </el-form-item>
           </el-col>
-          <el-col :span="8">
+          <el-col :span="6">
             <el-form-item label="日期范围">
               <el-date-picker
                   v-model="queryForm.dateRange"
@@ -66,12 +66,30 @@
               />
             </el-form-item>
           </el-col>
-          <el-col :span="8">
+          <el-col :span="6">
             <el-form-item label="学号">
               <el-input v-model="queryForm.studentId" placeholder="请输入学号" style="width: 100%"></el-input>
             </el-form-item>
           </el-col>
-          <el-col :span="8">
+          <el-col :span="6">
+            <el-form-item label="判定阈值">
+              <el-select v-model="queryForm.pThreshold" placeholder="请选择阈值" style="width: 100%">
+                <el-option label="0.01" :value="0.01"></el-option>
+                <el-option label="0.02" :value="0.02"></el-option>
+                <el-option label="0.03" :value="0.03"></el-option>
+                <el-option label="0.04" :value="0.04"></el-option>
+                <el-option label="0.05" :value="0.05"></el-option>
+                <el-option label="0.06" :value="0.06"></el-option>
+                <el-option label="0.07" :value="0.07"></el-option>
+                <el-option label="0.08" :value="0.08"></el-option>
+                <el-option label="0.09" :value="0.09"></el-option>
+                <el-option label="0.10" :value="0.10"></el-option>
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="20">
+          <el-col :span="24">
             <el-form-item>
               <el-button type="primary" @click="handleQuery">检测</el-button>
               <el-button @click="handleReset">重置</el-button>
@@ -80,26 +98,18 @@
         </el-row>
       </el-form>
 
-      <!-- 消费漂移检测图表 -->
+      <!-- 消费概念漂移检测图表 -->
       <el-card style="margin-top: 20px;">
         <template #header>
-          <span>消费漂移检测分析</span>
+          <span>概念漂移检测分析</span>
         </template>
         <div id="driftChart" ref="driftChart" class="drift-chart"></div>
-      </el-card>
-
-      <!-- 消费趋势图表（消费模式） -->
-      <el-card style="margin-top: 20px;">
-        <template #header>
-          <span>消费趋势分析（消费模式）</span>
-        </template>
-        <div id="consumptionChart" ref="consumptionChart" class="consumption-chart"></div>
       </el-card>
 
       <!-- 检测结果 -->
       <el-card style="margin-top: 20px;">
         <template #header>
-          <span>漂移检测结果</span>
+          <span>概念漂移检测结果</span>
         </template>
         <el-table
             :data="pagedDriftResults"
@@ -157,6 +167,7 @@ export default {
         grade: '',
         class: '',
         timeWindow: '7',
+        pThreshold: 0.05,
         driftMethod: 'ElKmeans',
         studentId: '',
         timeBegin: '',
@@ -175,12 +186,6 @@ export default {
         trend: [],
         driftPoints: []
       },
-      consumptionChartData: {
-        dates: [],
-        actual: [],
-        trend: [],
-        driftPoints: []
-      },
       resultPagination: {
         currentPage: 1,
         pageSize: 20,
@@ -188,8 +193,7 @@ export default {
       },
       charts: {},
       resizeHandler: null,
-      threshold: 0.05,
-      chartMode: 'consumption' // consumption | pvalue
+      chartMode: 'pvalue' // consumption | pvalue
     }
   },
   mounted() {
@@ -251,7 +255,8 @@ export default {
           ...this.queryForm,
           className: this.queryForm.class || undefined,
           grade: this.queryForm.grade || undefined,
-          timeWindow: windowDays
+          timeWindow: windowDays,
+          pThreshold: Number(this.queryForm.pThreshold || 0.05)
         }
 
         if (this.queryForm.dateRange?.length === 2) {
@@ -298,6 +303,8 @@ export default {
           // 处理漂移图表数据
           if (Array.isArray(data.p_values)) {
             this.chartMode = 'pvalue'
+            const threshold = Number(data.p_threshold ?? params.pThreshold ?? this.queryForm.pThreshold ?? 0.05)
+            this.queryForm.pThreshold = threshold
             // 后端返回 p_values 数组时，绘制 p 值曲线并标记显著点
             const dates = (data.chartData && data.chartData.dates)
               ? data.chartData.dates
@@ -318,8 +325,8 @@ export default {
               trend: [],
               driftPoints: pvals.map(v => ({
                 value: v,
-                itemStyle: { color: v < this.threshold ? '#ee6666' : '#91cc75' },
-                symbolSize: v < this.threshold ? 12 : 6
+                itemStyle: { color: v < threshold ? '#ee6666' : '#91cc75' },
+                symbolSize: v < threshold ? 12 : 6
               }))
             }
           } else if (data.chartData && data.chartData.dates && data.chartData.values) {
@@ -347,34 +354,6 @@ export default {
               trend: [],
               driftPoints: []
             }
-          }
-
-          // 构建消费模式图表数据（与 p 值模式并存）
-          if (data.chartData && data.chartData.dates && data.chartData.values) {
-            this.consumptionChartData = {
-              dates: data.chartData.dates,
-              actual: data.chartData.values.actual || [],
-              trend: data.chartData.values.trend || [],
-              driftPoints: data.chartData.values.driftPoints || []
-            }
-          } else if (data.timeSeries && Array.isArray(data.timeSeries)) {
-            this.consumptionChartData = {
-              dates: data.timeSeries.map(item => item.date || item.time),
-              actual: data.timeSeries.map(item => item.consumption || item.value),
-              trend: data.timeSeries.map(item => item.trend || null),
-              driftPoints: data.timeSeries.map((item) => item.isDrift ? (item.consumption || item.value) : null)
-            }
-          } else if (this.driftResults.length) {
-            const dates = this.driftResults.map(r => r.detectDate || r.date || '')
-            const actual = this.driftResults.map(r => Number(r.afterDrift ?? r.after ?? r.value ?? 0))
-            const trend = this.driftResults.map(r => Number(r.beforeDrift ?? r.before ?? 0))
-            const driftPoints = this.driftResults.map((r, idx) => {
-              const val = Number(r.changeRate ?? 0)
-              return Math.abs(val) > 0 ? actual[idx] : null
-            })
-            this.consumptionChartData = { dates, actual, trend, driftPoints }
-          } else {
-            this.consumptionChartData = { dates: [], actual: [], trend: [], driftPoints: [] }
           }
 
           // 如果 chart 数据为空但有表格结果，使用表格结果兜底生成序列
@@ -408,7 +387,6 @@ export default {
         // 初始化图表
         this.$nextTick(() => {
           this.initDriftChart()
-          this.initConsumptionChart()
         })
       } catch (error) {
         console.error('漂移检测失败:', error)
@@ -416,12 +394,6 @@ export default {
         this.driftResults = []
         this.resultPagination.total = 0
         this.driftChartData = {
-          dates: [],
-          actual: [],
-          trend: [],
-          driftPoints: []
-        }
-        this.consumptionChartData = {
           dates: [],
           actual: [],
           trend: [],
@@ -446,6 +418,7 @@ export default {
         grade: '',
         class: '',
         timeWindow: '7',
+        pThreshold: 0.05,
         driftMethod: 'ElKmeans',
         studentId: '',
         timeBegin: '',
@@ -489,8 +462,9 @@ export default {
       this.charts.driftChart = chart
 
       const isPValue = this.chartMode === 'pvalue'
+        const threshold = Number(this.queryForm.pThreshold || 0.05)
       const legendNames = isPValue
-          ? ['p值', `显著性阈值(p<${this.threshold})`, '检测点']
+          ? ['p值', `显著性阈值(p<${threshold})`, '检测点']
           : ['实际消费', '趋势线', '检测点']
 
       const dates = [...(this.driftChartData.dates || [])]
@@ -539,9 +513,9 @@ export default {
 
         if (isPValue) {
           series.push({
-            name: `显著性阈值(p<${this.threshold})`,
+            name: `显著性阈值(p<${threshold})`,
             type: 'line',
-            data: new Array(dates.length).fill(this.threshold),
+            data: new Array(dates.length).fill(threshold),
             smooth: false,
             lineStyle: { color: '#fac858', type: 'dotted', width: 1.5 },
             symbol: 'none'
@@ -638,104 +612,6 @@ export default {
       }
       window.addEventListener('resize', this.resizeHandler)
     }
-    ,
-    initConsumptionChart() {
-      const el = this.$refs.consumptionChart || document.getElementById('consumptionChart')
-      if (!el) return
-      const rect = el.getBoundingClientRect()
-      if (!rect.width || !rect.height) {
-        el.style.width = '100%'
-        el.style.minWidth = '600px'
-        el.style.height = '400px'
-        el.style.minHeight = '400px'
-      }
-      const chart = echarts.getInstanceByDom(el) || echarts.init(el)
-      chart.clear()
-      this.charts.consumptionChart = chart
-
-      const dates = [...(this.consumptionChartData.dates || [])]
-      const actual = [...(this.consumptionChartData.actual || [])]
-      const trend = [...(this.consumptionChartData.trend || [])]
-      const driftPoints = [...(this.consumptionChartData.driftPoints || [])]
-
-      if (dates.length > 0) {
-        const series = []
-        series.push({
-          name: '实际消费',
-          type: 'line',
-          data: actual,
-          smooth: true,
-          lineStyle: { color: '#5470c6', width: 3 },
-          symbol: 'circle',
-          symbolSize: 6,
-          showSymbol: true,
-          connectNulls: true
-        })
-
-        if (trend.length) {
-          series.push({
-            name: '趋势线',
-            type: 'line',
-            data: trend,
-            smooth: true,
-            lineStyle: { color: '#91cc75', type: 'dashed', width: 2 }
-          })
-        }
-
-        series.push({
-          name: '检测点',
-          type: 'scatter',
-          data: driftPoints,
-          symbolSize: 12,
-          itemStyle: { color: '#ee6666' }
-        })
-
-        const option = {
-          tooltip: {
-            trigger: 'axis',
-            formatter: (params) => {
-              let result = params[0].name + '<br/>'
-              params.forEach(param => {
-                if (param.value !== null && param.value !== undefined) {
-                  const val = Number(param.value)
-                  const formatted = isNaN(val) ? param.value : val.toFixed(2)
-                  result += param.seriesName + ': ' + formatted + '<br/>'
-                }
-              })
-              return result
-            }
-          },
-          legend: { data: ['实际消费', '趋势线', '检测点'] },
-          grid: { left: '3%', right: '4%', bottom: '8%', containLabel: true },
-          xAxis: {
-            type: 'category',
-            boundaryGap: false,
-            data: dates,
-            axisLabel: { color: '#666' },
-            axisLine: { lineStyle: { color: '#ccc' } }
-          },
-          yAxis: {
-            type: 'value',
-            name: '消费金额(元)',
-            axisLabel: { color: '#666' },
-            splitLine: { lineStyle: { color: '#eee' } }
-          },
-          series
-        }
-        chart.setOption(option, true)
-        chart.resize({
-          width: el.clientWidth || 800,
-          height: el.clientHeight || 400
-        })
-      } else {
-        chart.setOption({
-          title: { text: '暂无数据', left: 'center', top: 'center', textStyle: { color: '#999', fontSize: 14 } },
-          xAxis: { show: false },
-          yAxis: { show: false },
-          series: []
-        })
-      }
-    }
   }
 }
 </script>
@@ -752,10 +628,4 @@ export default {
   min-height: 400px;
 }
 
-.consumption-chart {
-  width: 100%;
-  min-width: 600px;
-  height: 400px;
-  min-height: 400px;
-}
 </style>

@@ -738,8 +738,8 @@ def analysis_cluster(cluster_body: ClusterBody = Depends()):
 @app.get("/analysis/drift")
 def analysis_drift(drift_body: DriftBody = Depends()):
     print(drift_body)
-    # 版本号防止旧缓存（无 results/chartData）命中
-    key = "api:drift:v5:" + drift_body.model_dump_json()
+    # 版本号防止旧缓存命中（窗口推进逻辑变更）
+    key = "api:drift:v7:" + drift_body.model_dump_json()
     val = r.get_key(key)
     if val:
         return json.loads(val)
@@ -752,7 +752,7 @@ def analysis_drift(drift_body: DriftBody = Depends()):
 @app.get("/analysis/correlation")
 def analysis_correlation(correlation_body: CorrelationBody = Depends()):
     print(correlation_body)
-    key = "api:correlation:v2:" + correlation_body.model_dump_json()
+    key = "api:correlation:v4:" + correlation_body.model_dump_json()
     val = r.get_key(key)
     if val:
         return json.loads(val)

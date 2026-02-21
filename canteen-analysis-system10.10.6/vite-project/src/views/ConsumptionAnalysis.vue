@@ -3,7 +3,7 @@
   <div class="consumption-analysis">
     <div class="page-header">
       <h2>消费数据分析</h2>
-      <p class="page-description">基于学生消费数据的深度分析与贫困生鉴别</p>
+      <p class="page-description">基于学生消费数据的深度分析与贫困生识别</p>
     </div>
     
     <div class="analysis-tabs">
@@ -11,13 +11,13 @@
         <el-tab-pane label="消费数据统计" name="data-query">
           <router-view />
         </el-tab-pane>
-        <el-tab-pane label="消费漂移检测" name="drift-detection">
+        <el-tab-pane label="概念漂移检测" name="drift-detection">
           <router-view />
         </el-tab-pane>
         <el-tab-pane label="贫困生识别" name="poverty-identification">
           <router-view />
         </el-tab-pane>
-        <el-tab-pane label="成绩关联分析" name="score-correlation">
+        <el-tab-pane label="成绩关联性分析" name="score-correlation">
           <router-view />
         </el-tab-pane>
       </el-tabs>

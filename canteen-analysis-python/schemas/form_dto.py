@@ -42,4 +42,5 @@ class CorrelationBody(BaseBody):
 class DriftBody(BaseBody):
     # 漂移分析特定参数（继承 timeWindow 等）
     timeWindow: Optional[int] = Field(7, description="时间窗口(天)", alias="timeWindow")
+    pThreshold: Optional[float] = Field(0.05, description="漂移显著性阈值(0.01~0.1)", alias="pThreshold")
 

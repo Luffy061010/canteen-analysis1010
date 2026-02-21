@@ -3,7 +3,7 @@
   <div class="score-correlation">
     <el-card>
       <template #header>
-        <span>成绩关联分析</span>
+        <span>成绩关联性分析</span>
       </template>
       
       <!-- 筛选条件 -->
@@ -124,15 +124,15 @@
               </div>
               <div class="single-item">
                 <span class="label">日均消费：</span>
-                <span class="value">¥{{ Number(selectedStudent.dailyAvg || 0).toFixed(2) }}</span>
+                <span class="value">{{ formatCurrency(selectedStudent.dailyAvg) }}</span>
               </div>
               <div class="single-item">
                 <span class="label">月均消费：</span>
-                <span class="value">¥{{ Number(selectedStudent.monthlyAvg || 0).toFixed(2) }}</span>
+                <span class="value">{{ formatCurrency(selectedStudent.monthlyAvg) }}</span>
               </div>
               <div class="single-item">
                 <span class="label">绩点：</span>
-                <span class="value">{{ Number(selectedStudent.gpa || 0).toFixed(2) }}</span>
+                <span class="value">{{ formatNumber(selectedStudent.gpa) }}</span>
               </div>
               <div class="single-item">
                 <span class="label">消费群体：</span>
@@ -161,60 +161,12 @@
         </template>
         <div class="result-meta" v-if="correlationMeta">
           <el-tag effect="plain">有效样本 n={{ correlationMeta.sampleSize || correlationMeta.mergedCount || 0 }}</el-tag>
-          <el-tag effect="plain">方法={{ (correlationMeta.method || 'pearson').toUpperCase() }}</el-tag>
-          <el-tag effect="plain">多重校正={{ correlationMeta.multipleTest || 'BH-FDR' }}</el-tag>
+          <el-tag effect="plain">方法={{ methodLabel }}</el-tag>
+          <el-tag effect="plain">多重校正={{ multipleTestLabel }}</el-tag>
           <el-tag effect="plain">学期={{ correlationMeta.termUsed || '-' }}</el-tag>
         </div>
-        <el-table :data="enhancedCorrelationResults" style="width: 100%">
-          <el-table-column prop="rank" label="排序" width="80"></el-table-column>
-          <el-table-column prop="factor" label="消费因素" width="150"></el-table-column>
-          <el-table-column prop="sampleSize" label="样本量" width="90"></el-table-column>
-          <el-table-column prop="correlation" label="相关系数" width="120">
-            <template #default="scope">
-              <el-tag :type="getCorrelationType(scope.row.correlation)">
-                {{ scope.row.correlation.toFixed(3) }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="ciRange" label="95%CI" width="170">
-            <template #default="scope">{{ formatCI(scope.row.ciLower, scope.row.ciUpper) }}</template>
-          </el-table-column>
-          <el-table-column prop="absCorrelation" label="绝对相关度" width="120">
-            <template #default="scope">
-              {{ scope.row.absCorrelation.toFixed(3) }}
-            </template>
-          </el-table-column>
-          <el-table-column prop="direction" label="方向" width="100">
-            <template #default="scope">
-              <el-tag :type="scope.row.direction === '正相关' ? 'success' : scope.row.direction === '负相关' ? 'danger' : 'info'">
-                {{ scope.row.direction }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="strength" label="强度" width="100"></el-table-column>
-          <el-table-column prop="pValue" label="P值" width="120">
-            <template #default="scope">{{ formatPValue(scope.row.pValue) }}</template>
-          </el-table-column>
-          <el-table-column prop="qValue" label="q值(FDR)" width="130">
-            <template #default="scope">{{ formatQValue(scope.row.qValue) }}</template>
-          </el-table-column>
-          <el-table-column prop="significance" label="显著性(FDR)" width="120">
-            <template #default="scope">
-              <el-tag :type="scope.row.significance === '显著' ? 'success' : 'info'">
-                {{ scope.row.significance }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="interpretation" label="解读"></el-table-column>
-        </el-table>
-        <el-divider content-position="left">梯度分布（Top5）</el-divider>
-        <el-table :data="heatmapTopBins" style="width: 100%">
-          <el-table-column prop="rank" label="排名" width="80"></el-table-column>
-          <el-table-column prop="consumptionBand" label="消费梯度"></el-table-column>
-          <el-table-column prop="gpaBand" label="GPA梯度"></el-table-column>
-          <el-table-column prop="count" label="人数" width="120"></el-table-column>
-        </el-table>
-        <div class="result-note">说明：此处展示“相关性”而非“因果性”，显著性按 BH-FDR 校正后的 q 值判定。</div>
+        <div class="result-paragraph">{{ correlationNarrative }}</div>
+        <div class="result-note">说明：这里说的是“相关”不是“因果”，即两者可能同时变化，但不能直接说明谁导致谁。</div>
       </el-card>
     </el-card>
   </div>
@@ -265,6 +217,18 @@ export default {
       return this.scatterPoints.find(p => p.studentId === this.selectedStudentId) || {}
     },
     groupAverages() {
+      if (this.scatterPoints.length > 1) {
+        const sum = this.scatterPoints.reduce((acc, cur) => {
+          acc.consumption += Number(cur.consumption || 0)
+          acc.gpa += Number(cur.gpa || 0)
+          return acc
+        }, { consumption: 0, gpa: 0 })
+        const len = this.scatterPoints.length
+        return {
+          consumption: Number((sum.consumption / len).toFixed(2)),
+          gpa: Number((sum.gpa / len).toFixed(2))
+        }
+      }
       if (this.correlationMeta && (this.correlationMeta.avgDaily || this.correlationMeta.avgGpa)) {
         return {
           consumption: Number(this.correlationMeta.avgDaily || 0),
@@ -282,6 +246,17 @@ export default {
         consumption: Number((sum.consumption / len).toFixed(2)),
         gpa: Number((sum.gpa / len).toFixed(2))
       }
+    },
+    methodLabel() {
+      const method = (this.correlationMeta?.method || 'pearson').toLowerCase()
+      if (method === 'pearson') return '皮尔逊相关系数（Pearson）'
+      if (method === 'spearman') return '斯皮尔曼秩相关（Spearman）'
+      return method || '皮尔逊相关系数（Pearson）'
+    },
+    multipleTestLabel() {
+      const mt = this.correlationMeta?.multipleTest || 'BH-FDR'
+      if (String(mt).toUpperCase() === 'BH-FDR') return 'BH-FDR（Benjamini-Hochberg）'
+      return mt
     },
     singleCompareOptions() {
       const student = this.selectedStudent
@@ -483,6 +458,41 @@ export default {
       return enriched
         .sort((a, b) => b.absCorrelation - a.absCorrelation)
         .map((r, idx) => ({ ...r, rank: idx + 1 }))
+    },
+    correlationNarrative() {
+      const rows = this.enhancedCorrelationResults
+      if (!rows.length) {
+        return '当前筛选条件下暂无可用于关联性分析的数据，请调整学院、专业、年级或学号后重新分析。'
+      }
+
+      const sampleSize = Number(this.correlationMeta?.sampleSize || this.correlationMeta?.mergedCount || rows[0]?.sampleSize || 0)
+      const method = (this.correlationMeta?.method || 'pearson').toLowerCase()
+      const multipleTest = this.correlationMeta?.multipleTest || 'BH-FDR'
+      const termUsed = this.correlationMeta?.termUsed || '-'
+      const significantCount = rows.filter(r => r.significance === '显著').length
+      const positiveCount = rows.filter(r => r.direction === '正相关').length
+      const negativeCount = rows.filter(r => r.direction === '负相关').length
+      const methodExplain = method === 'pearson'
+        ? '本次使用皮尔逊相关系数（Pearson），用来判断两个指标是否“同涨同跌”。相关系数在 -1 到 1 之间，绝对值越大，关系越明显。'
+        : method === 'spearman'
+          ? '本次使用斯皮尔曼秩相关（Spearman），更关注排序上的一致变化。'
+          : `本次使用 ${method} 方法进行分析。`
+      const multipleTestExplain = String(multipleTest).toUpperCase() === 'BH-FDR'
+        ? '为减少“多次比较”造成的误判，结果使用了 BH-FDR（Benjamini-Hochberg）校正。'
+        : `结果使用了 ${multipleTest} 做多重比较校正。`
+
+      const top = rows[0]
+      const topSentence = `从结果看，和成绩关系最明显的消费因素是“${top.factor}”，两者呈${top.direction}（相关系数 ${Number(top.correlation).toFixed(3)}，关系强度${top.strength}）。`
+
+      const topFactors = rows.slice(0, 3).map(item => `${item.factor}（${item.direction}，${Number(item.correlation).toFixed(3)}）`).join('、')
+      const topFactorsSentence = topFactors ? `相关性最靠前的三个因素是：${topFactors}。` : ''
+
+      const topBin = this.heatmapTopBins[0]
+      const topBinSentence = topBin
+        ? `从人群分布看，人数最多的是“消费 ${topBin.consumptionBand}、GPA ${topBin.gpaBand}”这一区间，共 ${topBin.count} 人。`
+        : ''
+
+      return `本次分析基于 ${sampleSize} 个有效样本，学期范围为 ${termUsed}。${methodExplain}${multipleTestExplain}在全部消费因素中，达到统计显著的有 ${significantCount} 个，其中正相关 ${positiveCount} 个、负相关 ${negativeCount} 个。${topSentence}${topFactorsSentence}${topBinSentence}`
     }
   },
   watch: {
@@ -653,6 +663,16 @@ export default {
       if (value < 1e-4) return value.toExponential(2)
       return value.toFixed(4)
     },
+    formatCurrency(value) {
+      const num = Number(value)
+      if (value === null || value === undefined || value === '' || Number.isNaN(num)) return '-'
+      return `¥${num.toFixed(2)}`
+    },
+    formatNumber(value) {
+      const num = Number(value)
+      if (value === null || value === undefined || value === '' || Number.isNaN(num)) return '-'
+      return num.toFixed(2)
+    },
     formatCI(ciLower, ciUpper) {
       const low = Number(ciLower)
       const high = Number(ciUpper)
@@ -795,5 +815,14 @@ export default {
   margin-top: 10px;
   font-size: 12px;
   color: #909399;
+}
+
+.result-paragraph {
+  line-height: 1.9;
+  color: #303133;
+  background: #fafcff;
+  border: 1px solid #eef2f7;
+  border-radius: 6px;
+  padding: 12px 14px;
 }
 </style>

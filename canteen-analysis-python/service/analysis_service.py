@@ -167,6 +167,10 @@ def analysis_drift(drift_body:DriftBody):
     time_begin = drift_body.timeBegin or drift_body.start_date
     time_end = drift_body.timeEnd or drift_body.end_date
     time_window = int(drift_body.timeWindow or 7)
+    p_threshold = float(drift_body.pThreshold or 0.05)
+
+    if p_threshold < 0.01 or p_threshold > 0.1:
+        raise HTTPException(status_code=400, detail="阈值范围必须在 0.01 到 0.1 之间")
 
     if not time_begin or not time_end:
         raise HTTPException(status_code=400, detail="缺少时间范围")
@@ -183,9 +187,8 @@ def analysis_drift(drift_body:DriftBody):
     left_time  = time_begin
     middle_time = time_begin + timedelta(days=time_window)
     right_time = time_begin + timedelta(days=time_window*2)
-    # 步长：基于总时长自适应，保证点数充足且不过多
-    max_points = 30
-    step_days = max(1, int(time_duration / max_points))
+    # 步长与时间窗口一致：按完整窗口推进，避免不同窗口下出现高度重叠的“近似 7 天”观感
+    step_days = time_window
 
     df_left = get_data_summary(BaseBody(
         college=drift_body.college,
@@ -254,7 +257,7 @@ def analysis_drift(drift_body:DriftBody):
             dynamic_k = min(dynamic_k, 20)
             model = EIkMeans(dynamic_k)
             model.build_partition(data_train,data_test.shape[0])
-            p = model.drift_detection2(data_test,0.05)
+            p = model.drift_detection2(data_test, p_threshold)
         p_values.append(p)
         confidence_from_p = max(0.0, min(100.0, (1.0 - float(p)) * 100.0))
 
@@ -270,7 +273,7 @@ def analysis_drift(drift_body:DriftBody):
             right_daily = 0.0
         consumption_actual.append(round(float(right_daily), 2))
         consumption_trend.append(round(float(left_daily), 2))
-        consumption_drift_points.append(round(float(right_daily), 2) if p < 0.05 else None)
+        consumption_drift_points.append(round(float(right_daily), 2) if p < p_threshold else None)
 
         # 生成表格结果：对每个学生计算漂移前后均值
         common_ids = df_left.index.intersection(df_right.index)
@@ -331,6 +334,7 @@ def analysis_drift(drift_body:DriftBody):
     print(p_values)
     return {
         "p_values": p_values,
+        "p_threshold": p_threshold,
         "time_window": time_window,
         "time_begin": time_begin.isoformat(),
         "time_end": time_end.isoformat(),
@@ -354,13 +358,13 @@ def analysis_correlation(correlation_body:CorrelationBody):
         time_begin = time_begin.date()
     if isinstance(time_end, datetime):
         time_end = time_end.date()
-    # 汇总消费数据（按筛选条件）
+    # 汇总消费数据（群体口径：不按 studentId 过滤，避免把群体缩成单个学生）
     summary_df = get_data_summary(BaseBody(
         college=correlation_body.college,
         major=correlation_body.major,
         grade=correlation_body.grade,
         className=correlation_body.className,
-        studentId=correlation_body.studentId,
+        studentId=None,
         timeBegin=time_begin,
         timeEnd=time_end
     ))
@@ -389,12 +393,9 @@ def analysis_correlation(correlation_body:CorrelationBody):
         row = cur.fetchone()
         term = row[0] if row else None
 
-    # 取每个学生的最新学期 GPA，可选学号/院系/专业/年级/班级过滤
+    # 取每个学生的最新学期 GPA（群体口径：不按 studentId 过滤）
     where_sql = " WHERE 1=1"
     params = []
-    if correlation_body.studentId:
-        where_sql += " AND s.student_id = %s"
-        params.append(correlation_body.studentId)
     if correlation_body.college:
         where_sql += " AND s.college = %s"
         params.append(correlation_body.college)
@@ -525,18 +526,33 @@ def analysis_correlation(correlation_body:CorrelationBody):
     student_profile = None
     if correlation_body.studentId:
         sid = normalize_student_id(correlation_body.studentId)
-        try:
-            profile_row = merged[merged["norm_id"] == sid]
-            profile_cons = profile_row.iloc[0] if len(profile_row) > 0 else None
-        except Exception:
-            profile_cons = None
 
-        if profile_cons is None:
+        # 学生个人消费：单独按学号聚合，避免依赖 merged 命中导致 0 值
+        student_summary_df = get_data_summary(BaseBody(
+            college=correlation_body.college,
+            major=correlation_body.major,
+            grade=correlation_body.grade,
+            className=correlation_body.className,
+            studentId=correlation_body.studentId,
+            timeBegin=time_begin,
+            timeEnd=time_end
+        ))
+
+        if not student_summary_df.empty:
+            student_summary_df["dailyAvg"] = student_summary_df[meal_cols].sum(axis=1)
+            student_summary_df["monthlyAvg"] = student_summary_df["dailyAvg"] * 30
+            profile_cons = student_summary_df.iloc[0]
+            daily_avg_val = float(profile_cons.get("dailyAvg", 0.0))
+            monthly_avg_val = float(profile_cons.get("monthlyAvg", 0.0))
+        else:
+            # 兜底：尝试在群体汇总中按规范化学号匹配
             try:
                 summary_row = summary_df[summary_df["norm_id"] == sid]
                 profile_cons = summary_row.iloc[0] if len(summary_row) > 0 else None
             except Exception:
                 profile_cons = None
+            daily_avg_val = float(profile_cons.get("dailyAvg", 0.0)) if profile_cons is not None else 0.0
+            monthly_avg_val = float(profile_cons.get("monthlyAvg", 0.0)) if profile_cons is not None else 0.0
 
         conn = pymysql.connect(**mysql.DBCONFIG)
         cur = conn.cursor()
@@ -545,8 +561,31 @@ def analysis_correlation(correlation_body:CorrelationBody):
             (correlation_body.studentId,)
         )
         srow = cur.fetchone()
+
+        # 学生绩点：独立查询，避免因消费缺失导致绩点被错误置为 0
+        if term:
+            cur.execute(
+                "SELECT gpa, term FROM basic_data_score WHERE student_id=%s AND term=%s ORDER BY term DESC LIMIT 1",
+                (correlation_body.studentId, term)
+            )
+            grow = cur.fetchone()
+            if not grow:
+                cur.execute(
+                    "SELECT gpa, term FROM basic_data_score WHERE student_id=%s ORDER BY term DESC LIMIT 1",
+                    (correlation_body.studentId,)
+                )
+                grow = cur.fetchone()
+        else:
+            cur.execute(
+                "SELECT gpa, term FROM basic_data_score WHERE student_id=%s ORDER BY term DESC LIMIT 1",
+                (correlation_body.studentId,)
+            )
+            grow = cur.fetchone()
+
         cur.close()
         conn.close()
+
+        gpa_val = float(grow[0]) if grow else 0.0
 
         # 基于群体分布的消费群体划分
         try:
@@ -565,9 +604,6 @@ def analysis_correlation(correlation_body:CorrelationBody):
                 return "中等消费"
             return "高消费"
 
-        daily_avg_val = float(profile_cons["dailyAvg"]) if profile_cons is not None else 0.0
-        gpa_val = float(profile_cons["gpa"]) if (profile_cons is not None and "gpa" in profile_cons) else 0.0
-
         student_profile = {
             "studentId": str(correlation_body.studentId),
             "name": srow[1] if srow else "-",
@@ -577,7 +613,7 @@ def analysis_correlation(correlation_body:CorrelationBody):
             "grade": srow[5] if srow else "-",
             "gpa": gpa_val,
             "dailyAvg": daily_avg_val,
-            "monthlyAvg": float(profile_cons["monthlyAvg"]) if profile_cons is not None else 0.0,
+            "monthlyAvg": monthly_avg_val,
             "consumptionGroup": classify_group(daily_avg_val)
         }
 

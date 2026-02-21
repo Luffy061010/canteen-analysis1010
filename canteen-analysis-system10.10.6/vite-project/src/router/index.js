@@ -80,7 +80,7 @@ const routes = [
                 path: 'drift-detection',
                 name: 'ConsumptionDrift',
                 component: () => import('../views/analysis/ConsumptionDrift.vue'),
-                meta: { title: '消费漂移检测' }
+                meta: { title: '消费概念漂移检测' }
             },
             {
                 path: 'poverty-identification',

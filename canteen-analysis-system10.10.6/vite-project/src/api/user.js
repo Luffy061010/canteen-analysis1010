@@ -100,6 +100,7 @@ const buildParams = (form) => {
         'correlationMethod': 'correlationMethod',
         'variable1': 'variable1',
         'driftMethod': 'driftMethod',
+        'pThreshold': 'pThreshold',
         'timeWindow': 'timeWindow',
         'clusterMethod': 'clusterMethod',
         'clusterNums': 'n_clusters',

@@ -43,7 +43,7 @@
 
           <el-menu-item index="/consumption-analysis/drift-detection">
             <el-icon><Warning /></el-icon>
-            <span>消费漂移检测</span>
+            <span>概念漂移检测</span>
           </el-menu-item>
 
           <el-menu-item index="/consumption-analysis/poverty-identification">
@@ -53,7 +53,7 @@
 
           <el-menu-item index="/consumption-analysis/score-correlation">
             <el-icon><Connection /></el-icon>
-            <span>成绩关联分析</span>
+            <span>成绩关联性分析</span>
           </el-menu-item>
         </el-sub-menu>
       </template>
