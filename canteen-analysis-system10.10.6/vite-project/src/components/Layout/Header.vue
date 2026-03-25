@@ -4,8 +4,8 @@
     <div class="brand-info">
       <img src="@/assets/logo.png" alt="山西大学" class="logo" @error="handleLogoError">
       <div class="system-name">
-        <h1 class="system-title">贫困生识别与用户画像构建系统</h1>
-        <p class="system-subtitle">基于大学生食堂消费数据流分析</p>
+        <h1 class="system-title">用户消费行为分析系统 </h1>
+        <p class="system-subtitle">基于校园餐饮消费数据流分析</p>
       </div>
     </div>
     

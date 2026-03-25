@@ -104,7 +104,10 @@ const buildParams = (form) => {
         'timeWindow': 'timeWindow',
         'clusterMethod': 'clusterMethod',
         'clusterNums': 'n_clusters',
-        'n_clusters': 'n_clusters'
+        'n_clusters': 'n_clusters',
+        'includeDetails': 'includeDetails',
+        'studentIds': 'studentIds',
+        'includeLlm': 'includeLlm'
     }
 
     Object.keys(paramMap).forEach(key => {
@@ -152,11 +155,24 @@ export const getStudentScores = (params) => {
 // ==================== 消费数据相关API ====================
 const ensureTimeRange = (params = {}) => {
     const next = { ...params }
-    if (!next.timeBegin || !next.timeEnd) {
+    const begin = next.timeBegin || next.time_begin || next.start_date
+    const end = next.timeEnd || next.time_end || next.end_date
+
+    if (!begin || !end) {
         // 防止后端 SQL 拼接出现无 WHERE 时的语法错误，给一个超宽时间范围兜底
-        next.timeBegin = next.timeBegin || '1970-01-01'
-        next.timeEnd = next.timeEnd || '2099-12-31'
+        next.timeBegin = begin || '1970-01-01'
+        next.timeEnd = end || '2099-12-31'
+    } else {
+        next.timeBegin = begin
+        next.timeEnd = end
     }
+
+    // 同时补齐多种风格字段，兼容 Java/FastAPI 不同参数命名
+    next.time_begin = next.timeBegin
+    next.time_end = next.timeEnd
+    next.start_date = next.timeBegin
+    next.end_date = next.timeEnd
+
     return next
 }
 
@@ -211,10 +227,38 @@ export const getPovertyIdentification = (form) => {
     return fastapiRequest.get(`/analysis/cluster`, { params })
 }
 
+export const getClusterDetails = (form) => {
+    const params = buildParams(form)
+    return fastapiRequest.get(`/analysis/cluster/details`, { params })
+}
+
+export const getDeepSeekExplanation = async (payload) => {
+    const endpoints = [
+        '/analysis/deepseek/explain',
+        '/analysis/llm/explain',
+        '/analysis/explain'
+    ]
+
+    let lastError = null
+    for (const endpoint of endpoints) {
+        try {
+            return await fastapiRequest.post(endpoint, payload)
+        } catch (error) {
+            lastError = error
+        }
+    }
+    throw lastError || new Error('DeepSeek explain API unavailable')
+}
+
 // ==================== 汇总数据API ====================
 export const getSummaryData = (form) => {
     const params = buildParams(form)
     return fastapiRequest.get(`/analysis/summary/data`, { params })
+}
+
+export const getDashboardOverview = (form) => {
+    const params = buildParams(form)
+    return fastapiRequest.get(`/analysis/dashboard/overview`, { params })
 }
 
 // ==================== 兼容性API ====================
@@ -278,7 +322,7 @@ export const getWindowRanking = (form) => {
     return getConsumptionTop(form)
 }
 
-// 贫困生鉴别分析
+// 聚类画像分析
 export const getPoorIdentification = (form) => {
     const params = buildParams(form)
     return fastapiRequest.get(`/analysis/cluster`, { params })
@@ -428,6 +472,7 @@ export default {
     getScoreCorrelation,
     getConsumptionDrift,
     getPovertyIdentification,
+    getDeepSeekExplanation,
     getPoorIdentification,
     getConsumptionCompare,
 

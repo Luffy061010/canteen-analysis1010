@@ -33,8 +33,10 @@ public class StudentConsumptionServiceImpl implements IStudentConsumptionService
      */
     @Override
     public PageResult<BasicDataStudentsConsumption> queryStudentComsumption(TimeQuery timeQuery) {
-        int pageNum = Optional.ofNullable(timeQuery.getPage()).orElse(1);
+        int pageNum = Math.max(1, Optional.ofNullable(timeQuery.getPage()).orElse(1));
         int pageSize = Optional.ofNullable(timeQuery.getPageSize()).orElse(20);
+        // 防止超大分页请求拖垮数据库。
+        pageSize = Math.min(Math.max(pageSize, 1), 1000);
         PageHelper.startPage(pageNum, pageSize);
         Page<BasicDataStudentsConsumption> page =(Page<BasicDataStudentsConsumption>) studentsMapper.queryStudentComsumption(timeQuery);
         PageResult<BasicDataStudentsConsumption> pageResult = new PageResult<>();

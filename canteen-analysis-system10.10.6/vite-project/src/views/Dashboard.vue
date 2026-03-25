@@ -1,9 +1,15 @@
 <template>
-  <!-- 页面：系统概览与统计看板 -->
   <div class="dashboard">
-    <!-- 顶部统计卡片 -->
+    <el-alert v-if="loadError" type="error" :closable="false" show-icon style="margin-bottom: 16px;">
+      <template #title>首页数据加载失败</template>
+      <div class="error-actions">
+        <span>{{ loadError }}</span>
+        <el-button size="small" type="danger" plain :loading="loading" @click="loadDashboard">重试</el-button>
+      </div>
+    </el-alert>
+
     <el-row :gutter="20">
-      <el-col :span="6">
+      <el-col :xs="24" :sm="12" :lg="8">
         <el-card class="stat-card">
           <div class="stat-content">
             <div class="stat-number">{{ statistics.totalStudents.toLocaleString() }}</div>
@@ -11,466 +17,568 @@
           </div>
         </el-card>
       </el-col>
-      <el-col :span="6">
+      <el-col :xs="24" :sm="12" :lg="8">
         <el-card class="stat-card">
           <div class="stat-content">
-            <div class="stat-number">¥{{ statistics.todayConsumption.toLocaleString() }}</div>
-            <div class="stat-label">今日消费总额</div>
+            <div class="stat-number">¥{{ statistics.latest24hAmount.toLocaleString() }}</div>
+            <div class="stat-label">最近24小时消费总额</div>
           </div>
         </el-card>
       </el-col>
-      <el-col :span="6">
+      <el-col :xs="24" :sm="24" :lg="8">
         <el-card class="stat-card">
           <div class="stat-content">
-            <div class="stat-number">{{ statistics.povertyStudents.toLocaleString() }}</div>
-            <div class="stat-label">贫困生数</div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :span="6">
-        <el-card class="stat-card">
-          <div class="stat-content">
-            <div class="stat-number">¥{{ statistics.monthlyConsumption.toLocaleString() }}</div>
-            <div class="stat-label">月总消费额</div>
+            <div class="stat-number">{{ statistics.latest24hRecords.toLocaleString() }}</div>
+            <div class="stat-label">最近24小时交易笔数</div>
           </div>
         </el-card>
       </el-col>
     </el-row>
 
-    <!-- 实时消费趋势图表（占据完整宽度） -->
     <el-row :gutter="20" style="margin-top: 20px;">
       <el-col :span="24">
         <el-card>
           <template #header>
-            <span>实时消费趋势分析</span>
+            <span>24小时消费统计</span>
           </template>
-          <div id="consumptionTrend" style="height: 400px;"></div>
+          <div id="hourlyChart" class="chart-large"></div>
         </el-card>
       </el-col>
     </el-row>
 
-    <!-- 贫困生消费信息 -->
-    <el-card style="margin-top: 20px;">
-      <template #header>
-        <span>贫困生消费监控</span>
-      </template>
-      <el-table :data="povertyConsumptionData" v-loading="loading" style="width: 100%">
-        <el-table-column prop="studentId" label="学号" width="120"></el-table-column>
-        <el-table-column prop="name" label="姓名" width="100"></el-table-column>
-        <el-table-column prop="college" label="学院" width="120"></el-table-column>
-        <el-table-column prop="monthlyAvg" label="月均消费" width="100">
-          <template #default="scope">
-            ¥{{ (scope.row.monthlyAvg || scope.row.monthlyConsumption || 0).toFixed(2) }}
+    <el-row :gutter="20" style="margin-top: 20px;">
+      <el-col :xs="24" :sm="12" :lg="8">
+        <el-card>
+          <template #header>
+            <span>消费层级占比</span>
           </template>
-        </el-table-column>
-        <el-table-column prop="dailyAvg" label="日均消费" width="100">
-          <template #default="scope">
-            ¥{{ (scope.row.dailyAvg || scope.row.avgDaily || 0).toFixed(2) }}
+          <div id="levelPieChart" class="chart-small"></div>
+        </el-card>
+      </el-col>
+      <el-col :xs="24" :sm="12" :lg="8">
+        <el-card>
+          <template #header>
+            <span>绩点直方图</span>
           </template>
-        </el-table-column>
-        <el-table-column prop="clusterType" label="消费类型" width="120">
-          <template #default="scope">
-            <el-tag :type="getLevelType(scope.row.clusterType || scope.row.consumptionLevel)">
-              {{ scope.row.clusterType || scope.row.consumptionLevel || '未知' }}
-            </el-tag>
+          <div id="gpaHistogramChart" class="chart-small"></div>
+        </el-card>
+      </el-col>
+      <el-col :xs="24" :sm="24" :lg="8">
+        <el-card>
+          <template #header>
+            <span>漂移程度仪表盘</span>
           </template>
-        </el-table-column>
-      </el-table>
-    </el-card>
+          <div id="driftGaugeChart" class="chart-small"></div>
+        </el-card>
+      </el-col>
+    </el-row>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick, onBeforeUnmount } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import * as echarts from 'echarts'
-import { getConsumption, getConsumptionData, getPovertyIdentification, getStudentInfo, getSystemStatus } from '@/api/user.js'
-import { ElMessage } from 'element-plus'
+import {
+  getDashboardOverview
+} from '@/api/user.js'
 
-// 响应式数据
 const statistics = ref({
   totalStudents: 0,
-  todayConsumption: 0,
-  povertyStudents: 0,
-  monthlyConsumption: 0
+  latest24hAmount: 0,
+  latest24hRecords: 0
 })
 
-const povertyConsumptionData = ref([])
 const loading = ref(false)
-const trendDataState = ref({ dates: [], values: [] })
-const DASHBOARD_TREND_START = '2024-09-01'
-const DASHBOARD_TREND_END = '2024-09-30'
+const loadError = ref('')
 
-// 数据安全处理
-const safeValue = (val) => {
-  if (val === null || val === undefined || isNaN(val)) return 0
-  const num = Number(val)
-  return isNaN(num) ? 0 : num
+const charts = {
+  hourly: null,
+  pie: null,
+  histogram: null,
+  gauge: null
 }
 
-const pickStatValue = (stat, keys = []) => {
-  if (!stat) return undefined
-  for (const key of keys) {
-    const val = stat[key]
-    if (val !== undefined && val !== null && val !== '') {
-      return val
+let resizeHandler = null
+
+const safeNumber = (v) => {
+  const n = Number(v)
+  return Number.isNaN(n) ? 0 : n
+}
+
+const getRecordRows = (res) => {
+  const rows = res?.records || res?.data?.records || res?.data || []
+  return Array.isArray(rows) ? rows : []
+}
+
+const getRecordTotal = (res, fallback = 0) => {
+  const total = Number(res?.total || res?.totalCount || res?.data?.total || res?.data?.totalCount || fallback || 0)
+  return Number.isNaN(total) ? fallback : total
+}
+
+const fetchAllConsumptionRecords = async (query = {}) => {
+  const pageSize = 1000
+  const maxPages = 3
+  const maxRows = 3000
+  let page = 1
+  let allRows = []
+  let total = 0
+
+  while (page <= maxPages) {
+    const res = await getConsumptionData({ ...query, page, pageSize })
+    const rows = getRecordRows(res)
+    if (!rows.length) break
+
+    allRows = allRows.concat(rows)
+    total = getRecordTotal(res, allRows.length)
+
+    // 首页只需要近段时间画像，限制最大记录数避免大数据量下页面阻塞。
+    if (allRows.length >= maxRows) break
+
+    if (allRows.length >= total) break
+    if (rows.length < pageSize) break
+
+    page += 1
+  }
+
+  return allRows
+}
+
+const parseTime = (record) => {
+  const raw = record?.consumptionTime || record?.consumption_time || record?.consume_time || record?.consumeTime || ''
+  if (!raw) return null
+  if (typeof raw === 'string') {
+    const normalized = raw.includes('T') ? raw : raw.replace(' ', 'T')
+    const date = new Date(normalized)
+    if (!Number.isNaN(date.getTime())) return date
+  }
+  const date = new Date(raw)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+const quantile = (arr, q) => {
+  if (!arr.length) return 0
+  const sorted = [...arr].sort((a, b) => a - b)
+  const idx = Math.floor((sorted.length - 1) * q)
+  return sorted[idx]
+}
+
+const levelName = (value, q1, q2, q3) => {
+  if (value <= q1) return '低消费'
+  if (value <= q2) return '较低消费'
+  if (value <= q3) return '中消费'
+  return '高消费'
+}
+
+const extractClusterRows = (res) => {
+  const root = res?.results || res?.data?.results || res?.povertyResults || res?.data?.povertyResults || []
+  return Array.isArray(root) ? root : []
+}
+
+const extractDateRange = (records) => {
+  const dates = records.map(parseTime).filter(Boolean).sort((a, b) => a - b)
+  if (!dates.length) {
+    return {
+      latestDate: null,
+      start: null,
+      end: null
     }
   }
-  return undefined
+  const latestDate = dates[dates.length - 1]
+  const end = new Date(latestDate)
+  const start = new Date(latestDate)
+  start.setDate(start.getDate() - 29)
+  return { latestDate, start, end }
 }
 
-const extractRecords = (res) => {
-  if (Array.isArray(res?.records)) return res.records
-  if (Array.isArray(res?.data?.records)) return res.data.records
-  if (Array.isArray(res?.data)) return res.data
-  if (Array.isArray(res)) return res
-  return []
+const formatDay = (d) => {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
-const extractTotal = (res) => {
-  return res?.total || res?.totalCount || res?.count || res?.data?.total || res?.data?.totalCount || res?.data?.count || 0
-}
-
-const sumAmount = (records = []) => {
-  return records.reduce((sum, item) => {
-    return sum + safeValue(item?.amount ?? item?.totalAmount ?? item?.money ?? item?.value ?? 0)
-  }, 0)
-}
-
-const extractDateFromRecord = (record) => {
-  const timeRaw = record?.consumptionTime || record?.consumption_time || record?.consume_time || record?.consumeTime || ''
-  if (!timeRaw) return ''
-  if (typeof timeRaw === 'string') return timeRaw.split('T')[0]
-  try {
-    return new Date(timeRaw).toISOString().slice(0, 10)
-  } catch {
-    return ''
+const buildRecentRange = (days = 30) => {
+  const end = new Date()
+  const start = new Date(end)
+  start.setDate(start.getDate() - Math.max(1, Number(days || 30) - 1))
+  return {
+    timeBegin: formatDay(start),
+    timeEnd: formatDay(end)
   }
 }
 
-const fetchAllConsumptionRecords = async ({ timeBegin, timeEnd }) => {
-  let page = 1
-  const pageSize = 2000
-  const maxPages = 30
-  let totalCount = 0
-  let all = []
-
-  do {
-    const res = await getConsumptionData({ page, pageSize, timeBegin, timeEnd })
-    const records = extractRecords(res)
-    all = all.concat(records)
-    totalCount = Number(extractTotal(res)) || records.length
-    page += 1
-  } while ((page - 1) * pageSize < totalCount && page <= maxPages)
-
-  return all
+const buildHourly = (records, targetDate) => {
+  const hourly = new Array(24).fill(0)
+  let recordCount = 0
+  records.forEach((r) => {
+    const t = parseTime(r)
+    if (!t) return
+    if (formatDay(t) !== targetDate) return
+    const hour = t.getHours()
+    hourly[hour] += safeNumber(r?.amount ?? r?.money ?? 0)
+    recordCount += 1
+  })
+  return { hourly, recordCount }
 }
 
-const buildTrendFromRecords = (records = [], startDate, endDate) => {
-  if (!records.length) return { dates: [], values: [] }
+const buildLatest24hStats = (records, latestDate) => {
+  if (!latestDate) return { amount: 0, count: 0 }
+  const endTs = latestDate.getTime()
+  const startTs = endTs - 24 * 60 * 60 * 1000
+  let amount = 0
+  let count = 0
 
-  const dailyMap = {}
-  records.forEach((item) => {
-    const day = extractDateFromRecord(item)
-    if (!day) return
-    dailyMap[day] = (dailyMap[day] || 0) + safeValue(item?.amount ?? item?.money ?? 0)
+  records.forEach((r) => {
+    const t = parseTime(r)
+    if (!t) return
+    const ts = t.getTime()
+    if (ts < startTs || ts > endTs) return
+    amount += safeNumber(r?.amount ?? r?.money ?? r?.consumeAmount ?? r?.consumptionAmount ?? 0)
+    count += 1
   })
 
-  const start = new Date(startDate)
-  const end = new Date(endDate)
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) {
-    return { dates: [], values: [] }
-  }
-
-  const startKey = startDate
-  const endKey = endDate
-  const dateKeys = Object.keys(dailyMap)
-    .filter((key) => key >= startKey && key <= endKey)
-    .sort()
-
-  const dates = dateKeys.map((key) => key.slice(5))
-  const values = dateKeys.map((key) => Number((dailyMap[key] || 0).toFixed(2)))
-
-  return { dates, values }
+  return { amount, count }
 }
 
-// 加载统计数据（系统状态接口）
-const loadStatistics = async () => {
-  loading.value = true
+const buildDailySeries = (records) => {
+  const dailyMap = new Map()
+  records.forEach((r) => {
+    const t = parseTime(r)
+    if (!t) return
+    const day = formatDay(t)
+    const amount = safeNumber(r?.amount ?? r?.money ?? 0)
+    dailyMap.set(day, (dailyMap.get(day) || 0) + amount)
+  })
+  return Array.from(dailyMap.values())
+}
+
+const calcCvScore = (dailySeries) => {
+  if (!Array.isArray(dailySeries) || dailySeries.length < 3) return 0
+  const mean = dailySeries.reduce((s, v) => s + v, 0) / dailySeries.length
+  if (mean <= 0) return 0
+  const variance = dailySeries.reduce((s, v) => s + (v - mean) * (v - mean), 0) / dailySeries.length
+  const std = Math.sqrt(variance)
+  const cv = std / mean
+  return Math.min(100, cv * 100)
+}
+
+const withTimeout = async (promise, ms, fallbackValue = null) => {
+  let timer = null
   try {
-    const [stat, studentStat, allRecords] = await Promise.all([
-      getSystemStatus().catch(() => null),
-      getStudentInfo({ page: 1, pageSize: 1 }).catch(() => null),
-      fetchAllConsumptionRecords({ timeBegin: DASHBOARD_TREND_START, timeEnd: DASHBOARD_TREND_END }).catch(() => [])
-    ])
-
-    const statSource = stat && typeof stat === 'object' && stat.data ? stat.data : stat
-    const totalStudents = safeValue(
-      pickStatValue(studentStat, ['total', 'totalCount']) ??
-      pickStatValue(studentStat?.data, ['total', 'totalCount']) ??
-      pickStatValue(statSource, ['totalStudents', 'total_students', 'total'])
-    )
-
-    const dailyMap = {}
-    allRecords.forEach((item) => {
-      const day = extractDateFromRecord(item)
-      if (!day) return
-      dailyMap[day] = (dailyMap[day] || 0) + safeValue(item?.amount ?? item?.money ?? 0)
+    const timeoutPromise = new Promise((resolve) => {
+      timer = setTimeout(() => resolve(fallbackValue), ms)
     })
+    return await Promise.race([promise, timeoutPromise])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
 
-    const allDays = Object.keys(dailyMap).sort()
-    const latestDay = allDays.length ? allDays[allDays.length - 1] : ''
-    const latestMonth = latestDay ? latestDay.slice(0, 7) : ''
+const initOrGetChart = (id, key) => {
+  const el = document.getElementById(id)
+  if (!el) return null
+  const existing = echarts.getInstanceByDom(el)
+  charts[key] = existing || echarts.init(el)
+  return charts[key]
+}
 
-    const todayConsumption = latestDay ? safeValue(dailyMap[latestDay]) : 0
-    const monthlyConsumption = latestMonth
-      ? safeValue(
-        allDays
-          .filter(day => day.startsWith(latestMonth))
-          .reduce((sum, day) => sum + safeValue(dailyMap[day]), 0)
-      )
-      : 0
+const renderHourlyChart = (hourlyData) => {
+  const chart = initOrGetChart('hourlyChart', 'hourly')
+  if (!chart) return
+  const x = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`)
+  const maxVal = Math.max(...hourlyData, 0)
+  const maxIdx = hourlyData.findIndex(v => v === maxVal)
+  chart.setOption({
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params) => {
+        const point = params?.[0]
+        if (!point) return ''
+        return `${point.axisValue}<br/>消费额: ¥${Number(point.data || 0).toFixed(2)}`
+      }
+    },
+    grid: { left: '3%', right: '4%', bottom: '4%', top: '12%', containLabel: true },
+    xAxis: {
+      type: 'category',
+      data: x,
+      boundaryGap: false,
+      axisLabel: { interval: 1, rotate: 35, color: '#606266' },
+      axisLine: { lineStyle: { color: '#dcdfe6' } }
+    },
+    yAxis: {
+      type: 'value',
+      name: '金额(元)',
+      axisLabel: { color: '#606266' },
+      splitLine: { lineStyle: { color: '#eef2f8', type: 'dashed' } }
+    },
+    series: [
+      {
+        name: '消费额',
+        type: 'line',
+        smooth: true,
+        data: hourlyData.map(v => Number(v.toFixed(2))),
+        symbol: 'circle',
+        symbolSize: 7,
+        lineStyle: { width: 3, color: '#3A7AFE' },
+        itemStyle: { color: '#3A7AFE' },
+        areaStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: 'rgba(58,122,254,0.30)' },
+            { offset: 1, color: 'rgba(58,122,254,0.03)' }
+          ])
+        },
+        markPoint: maxVal > 0
+          ? {
+            data: [{ coord: [maxIdx, Number(maxVal.toFixed(2))], value: `峰值 ¥${Number(maxVal).toFixed(2)}` }],
+            symbolSize: 42,
+            label: { color: '#fff', fontSize: 10 }
+          }
+          : undefined
+      }
+    ]
+  })
+}
 
-    const fallbackTotal = safeValue(pickStatValue(statSource, ['totalAmount', 'total']))
+const renderPieChart = (levelRows) => {
+  const chart = initOrGetChart('levelPieChart', 'pie')
+  if (!chart) return
+  const counts = {
+    '低消费': 0,
+    '较低消费': 0,
+    '中消费': 0,
+    '高消费': 0
+  }
+  levelRows.forEach((i) => {
+    const key = i?.level || i?.name
+    const value = safeNumber(i?.value ?? 1)
+    if (key && counts[key] !== undefined) {
+      counts[key] += value
+    }
+  })
+
+  const total = Object.values(counts).reduce((sum, value) => sum + Number(value || 0), 0)
+  if (!total) {
+    chart.setOption({
+      title: {
+        text: '暂无分层数据',
+        left: 'center',
+        top: 'center',
+        textStyle: { color: '#909399', fontSize: 14 }
+      },
+      series: []
+    })
+    return
+  }
+
+  chart.setOption({
+    title: { show: false },
+    tooltip: { trigger: 'item', formatter: '{b}: {c}人 ({d}%)' },
+    legend: {
+      type: 'scroll',
+      bottom: 0,
+      icon: 'circle',
+      textStyle: { fontSize: 12 }
+    },
+    series: [
+      {
+        type: 'pie',
+        center: ['50%', '46%'],
+        radius: ['34%', '62%'],
+        data: Object.keys(counts).map(k => ({ name: k, value: counts[k] })),
+        minShowLabelAngle: 10,
+        avoidLabelOverlap: true,
+        labelLine: { length: 10, length2: 10 },
+        label: {
+          formatter: (params) => `${params.name}\n${params.value}人 (${Number(params.percent || 0).toFixed(1)}%)`,
+          fontSize: 11
+        },
+        labelLayout: { hideOverlap: true },
+        itemStyle: { borderRadius: 8, borderColor: '#fff', borderWidth: 2 }
+      }
+    ]
+  })
+}
+
+const renderHistogram = (gpas) => {
+  const chart = initOrGetChart('gpaHistogramChart', 'histogram')
+  if (!chart) return
+
+  if (!Array.isArray(gpas) || !gpas.length) {
+    chart.setOption({
+      title: {
+        text: '暂无绩点分布数据',
+        left: 'center',
+        top: 'center',
+        textStyle: { color: '#909399', fontSize: 14 }
+      },
+      xAxis: { show: false },
+      yAxis: { show: false },
+      series: []
+    })
+    return
+  }
+
+  const bins = [0, 0, 0, 0, 0, 0]
+  gpas.forEach((g) => {
+    if (g < 2.0) bins[0] += 1
+    else if (g < 2.5) bins[1] += 1
+    else if (g < 3.0) bins[2] += 1
+    else if (g < 3.5) bins[3] += 1
+    else if (g <= 4.0) bins[4] += 1
+    else bins[5] += 1
+  })
+
+  chart.setOption({
+    title: { show: false },
+    tooltip: { trigger: 'axis' },
+    grid: { left: '5%', right: '4%', bottom: '5%', containLabel: true },
+    xAxis: { show: true, type: 'category', data: ['<2.0', '2.0-2.5', '2.5-3.0', '3.0-3.5', '3.5-4.0', '>4.0'] },
+    yAxis: { show: true, type: 'value', name: '人数' },
+    series: [
+      {
+        type: 'bar',
+        data: bins,
+        itemStyle: {
+          borderRadius: [6, 6, 0, 0],
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: '#54D0A0' },
+            { offset: 1, color: '#2CB67D' }
+          ])
+        },
+        barMaxWidth: 28
+      }
+    ]
+  })
+}
+
+const renderGauge = (driftScore, hasData = true, note = '') => {
+  const chart = initOrGetChart('driftGaugeChart', 'gauge')
+  if (!chart) return
+
+  const safeScore = Number.isFinite(Number(driftScore)) ? Number(driftScore) : 0
+  const subtext = note || (hasData ? '漂移指数越高，行为变化越明显' : '样本不足，先展示默认值')
+  chart.setOption({
+    title: {
+      text: hasData ? '漂移指数' : '暂无充分样本',
+      subtext,
+      left: 'center',
+      top: 12,
+      textStyle: { color: '#606266', fontSize: 13, fontWeight: 500 },
+      subtextStyle: { color: '#909399', fontSize: 11 }
+    },
+    series: [
+      {
+        type: 'gauge',
+        min: 0,
+        max: 100,
+        progress: { show: true, width: 14 },
+        axisLine: {
+          lineStyle: {
+            width: 14,
+            color: [[1, '#e6ebf3']]
+          }
+        },
+        splitLine: { distance: -16, length: 10, lineStyle: { width: 1, color: '#999' } },
+        axisTick: { distance: -16, length: 4, lineStyle: { color: '#999' } },
+        detail: { valueAnimation: true, formatter: '{value}%', color: '#303133', fontSize: 24, offsetCenter: [0, '58%'] },
+        data: [{ value: Number(safeScore.toFixed(1)), name: '漂移指数' }]
+      }
+    ]
+  })
+}
+
+const loadDashboard = async () => {
+  loading.value = true
+  loadError.value = ''
+
+  try {
+    await nextTick()
+    // 先渲染默认图，避免慢请求期间出现空白区域。
+    renderHourlyChart(new Array(24).fill(0))
+    renderPieChart([])
+    renderHistogram([])
+    renderGauge(0, false, '正在加载数据...')
+
+    const overview = await withTimeout(getDashboardOverview({}).catch(() => null), 12000, null)
+
+    if (!overview || typeof overview !== 'object') {
+      throw new Error('overview unavailable')
+    }
+
+    const stats = overview.statistics || {}
+    const hourly = Array.isArray(overview?.hourly?.amount) ? overview.hourly.amount : new Array(24).fill(0)
+    const levelRows = Array.isArray(overview.levelDistribution) ? overview.levelDistribution : []
+    const gpaLabels = Array.isArray(overview?.gpaHistogram?.labels) ? overview.gpaHistogram.labels : ['<2.0', '2.0-2.5', '2.5-3.0', '3.0-3.5', '3.5-4.0', '>4.0']
+    const gpaValues = Array.isArray(overview?.gpaHistogram?.values) ? overview.gpaHistogram.values : [0, 0, 0, 0, 0, 0]
+    const drift = overview.drift || {}
 
     statistics.value = {
-      totalStudents,
-      todayConsumption: todayConsumption || fallbackTotal,
-      povertyStudents: safeValue(pickStatValue(statSource, ['povertyStudents', 'poverty_students', 'povertyCount'])),
-      monthlyConsumption: monthlyConsumption || fallbackTotal
+      totalStudents: safeNumber(stats.totalStudents),
+      latest24hAmount: safeNumber(stats.latest24hAmount),
+      latest24hRecords: safeNumber(stats.latest24hRecords)
     }
 
-    trendDataState.value = buildTrendFromRecords(allRecords, DASHBOARD_TREND_START, DASHBOARD_TREND_END)
-  } catch (error) {
-    console.error('加载统计数据失败:', error)
-    // 兜底：当 /system/status 不可用时回退到消费统计与学生数
-    try {
-      const [consumptionStat, studentStat] = await Promise.all([
-        getConsumption({}),
-        getStudentInfo({ page: 1, pageSize: 1 })
-      ])
+    renderHourlyChart(hourly)
+    renderPieChart(levelRows)
 
-      const totalStudents = studentStat?.total || studentStat?.totalCount || studentStat?.data?.total || 0
-      const totalAmount = consumptionStat?.totalAmount || consumptionStat?.total || 0
-
-      statistics.value = {
-        totalStudents: safeValue(totalStudents),
-        todayConsumption: safeValue(totalAmount),
-        povertyStudents: safeValue(statistics.value.povertyStudents),
-        monthlyConsumption: safeValue(totalAmount)
-      }
-    } catch (fallbackError) {
-      console.error('兜底统计数据失败:', fallbackError)
-      if (error.response?.status === 422) {
-        ElMessage.error('参数验证失败，请检查请求格式')
-      } else {
-        ElMessage.warning('加载统计数据失败，请稍后重试')
-      }
-    }
-  } finally {
-    loading.value = false
-  }
-}
-
-// 加载贫困生数据（复用消费明细分页）
-const loadPovertyData = async () => {
-  loading.value = true
-  try {
-    const result = await getPovertyIdentification({ clusterMethod: 'kmeans' })
-    const hasRootResults = result && (result.results || result.clusterData || result.distributionData || result.centers)
-    const dataRoot = hasRootResults ? result : (result && typeof result === 'object' && result.data ? result.data : result)
-    const records = Array.isArray(dataRoot?.results)
-      ? dataRoot.results
-      : Array.isArray(dataRoot?.povertyResults)
-        ? dataRoot.povertyResults
-        : Array.isArray(dataRoot)
-          ? dataRoot
-          : []
-
-    const mapped = records.map((item) => {
-      const studentId = item.studentId || item.student_id || ''
-      return {
-        studentId,
-        name: item.name || item.studentName || item.student_name || studentId || '-',
-        college: item.college || item.collegeName || item.college_name || '未知',
-        monthlyAvg: safeValue(item.monthlyAvg ?? item.monthly_avg ?? 0),
-        dailyAvg: safeValue(item.dailyAvg ?? item.daily_avg ?? 0),
-        clusterType: item.clusterType || item.type || '未知'
-      }
-    })
-
-    const povertyOnly = mapped.filter(row => row.clusterType === '贫困生' || row.clusterType === '贫困')
-    povertyConsumptionData.value = povertyOnly.length ? povertyOnly : mapped
-
-    if (!statistics.value.povertyStudents && povertyConsumptionData.value.length) {
-      statistics.value.povertyStudents = povertyConsumptionData.value.length
-    }
-  } catch (error) {
-    console.error('加载贫困生数据失败:', error)
-    povertyConsumptionData.value = []
-  } finally {
-    loading.value = false
-  }
-}
-
-// 图表实例引用
-let trendChart = null
-
-// 图表初始化函数
-const initConsumptionTrend = (trendData = null) => {
-  nextTick(() => {
-    try {
-      const chartDom = document.getElementById('consumptionTrend')
-      if (!chartDom) {
-        console.warn('图表容器未找到')
-        return
-      }
-
-      // 如果图表已存在，先销毁
-      if (trendChart) {
-        trendChart.dispose()
-      }
-
-      trendChart = echarts.init(chartDom)
-
-      // 如果没有数据，使用默认示例数据
-      const chartData = trendData || generateDefaultTrendData()
-
-      const option = {
-        title: {
-          text: '近期消费趋势',
-          left: 'center',
-          textStyle: {
-            fontSize: 16,
-            fontWeight: 'normal'
-          }
-        },
-        tooltip: {
-          trigger: 'axis',
-          axisPointer: {
-            type: 'cross'
-          },
-          formatter: (params) => {
-            const data = params[0]
-            return `${data.name}<br/>消费总额: ¥${data.value.toLocaleString()}`
-          }
-        },
-        grid: {
-          left: '3%',
-          right: '4%',
-          bottom: '3%',
-          containLabel: true
-        },
-        xAxis: {
-          type: 'category',
-          boundaryGap: false,
-          data: chartData.dates,
-          axisLine: {
-            lineStyle: {
-              color: '#DCDFE6'
-            }
-          },
-          axisLabel: {
-            color: '#606266',
-            rotate: 45
-          }
-        },
-        yAxis: {
-          type: 'value',
-          name: '消费金额(元)',
-          axisLine: {
-            lineStyle: {
-              color: '#DCDFE6'
-            }
-          },
-          axisLabel: {
-            color: '#606266',
-            formatter: (value) => `¥${value.toLocaleString()}`
-          },
-          splitLine: {
-            lineStyle: {
-              color: '#F2F6FC',
-              type: 'dashed'
-            }
-          }
-        },
+    // 复用现有柱状图风格，按后端分箱数据绘制。
+    const chart = initOrGetChart('gpaHistogramChart', 'histogram')
+    if (chart) {
+      chart.setOption({
+        title: { show: false },
+        tooltip: { trigger: 'axis' },
+        grid: { left: '5%', right: '4%', bottom: '5%', containLabel: true },
+        xAxis: { show: true, type: 'category', data: gpaLabels },
+        yAxis: { show: true, type: 'value', name: '人数' },
         series: [
           {
-            name: '消费总额',
-            type: 'line',
-            smooth: true,
-            data: chartData.values,
-            areaStyle: {
-              color: {
-                type: 'linear',
-                x: 0,
-                y: 0,
-                x2: 0,
-                y2: 1,
-                colorStops: [
-                  { offset: 0, color: 'rgba(64, 158, 255, 0.3)' },
-                  { offset: 1, color: 'rgba(64, 158, 255, 0.1)' }
-                ]
-              }
-            },
+            type: 'bar',
+            data: gpaValues,
             itemStyle: {
-              color: '#409EFF'
+              borderRadius: [6, 6, 0, 0],
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: '#54D0A0' },
+                { offset: 1, color: '#2CB67D' }
+              ])
             },
-            lineStyle: {
-              width: 3,
-              color: '#409EFF'
-            }
+            barMaxWidth: 28
           }
         ]
-      }
-
-      trendChart.setOption(option)
-
-      // 响应式调整
-      window.addEventListener('resize', () => {
-        if (trendChart) {
-          trendChart.resize()
-        }
       })
-    } catch (error) {
-      console.error('初始化图表失败:', error)
-      ElMessage.error('图表初始化失败')
     }
-  })
-}
 
-// 生成默认趋势数据（如果没有真实数据）
-const generateDefaultTrendData = () => {
-  return {
-    dates: trendDataState.value?.dates || [],
-    values: trendDataState.value?.values || []
+    renderGauge(safeNumber(drift.score), !!drift.hasData, drift.note || '')
+
+    if (!safeNumber(stats.totalStudents) && !safeNumber(stats.latest24hRecords)) {
+      loadError.value = '未获取到有效首页数据，请检查后端服务与数据库连接。'
+    }
+  } catch (error) {
+    console.error('首页数据加载失败:', error)
+    loadError.value = '请检查后端服务后重试。'
+    renderGauge(0, false, '加载失败，请重试')
+  } finally {
+    loading.value = false
   }
 }
-
-// 获取消费类型标签颜色
-const getLevelType = (type) => {
-  const typeMap = {
-    '低消费': 'danger',
-    '中等消费': 'warning',
-    '高消费': 'success',
-    '贫困': 'danger',
-    '正常': 'success',
-    '富裕': 'info'
-  }
-  return typeMap[type] || 'info'
-}
-
-// 组件卸载时销毁图表
-onBeforeUnmount(() => {
-  if (trendChart) {
-    trendChart.dispose()
-    trendChart = null
-  }
-  window.removeEventListener('resize', () => {})
-})
 
 onMounted(async () => {
-  await Promise.all([loadStatistics(), loadPovertyData()])
-  initConsumptionTrend(trendDataState.value)
+  await loadDashboard()
+
+  resizeHandler = () => {
+    Object.values(charts).forEach((c) => {
+      if (c && typeof c.resize === 'function') c.resize()
+    })
+  }
+  window.addEventListener('resize', resizeHandler)
+})
+
+onBeforeUnmount(() => {
+  if (resizeHandler) {
+    window.removeEventListener('resize', resizeHandler)
+  }
+  Object.values(charts).forEach((c) => {
+    if (c && typeof c.dispose === 'function') c.dispose()
+  })
 })
 </script>
 
@@ -479,30 +587,63 @@ onMounted(async () => {
   padding: 20px;
 }
 
-.stat-card {
-  text-align: center;
-  cursor: pointer;
-  transition: all 0.3s;
+.dashboard :deep(.el-card) {
+  border-radius: 12px;
+  border: 1px solid #edf1f7;
+  box-shadow: 0 6px 18px rgba(18, 38, 63, 0.05);
 }
 
-.stat-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+.dashboard :deep(.el-card__header) {
+  font-weight: 600;
+  color: #2f3a4f;
+}
+
+.stat-card {
+  min-height: 120px;
+  background: linear-gradient(145deg, #ffffff 0%, #f7faff 100%);
 }
 
 .stat-content {
-  padding: 20px;
+  text-align: center;
+  padding: 12px 0;
 }
 
 .stat-number {
   font-size: 28px;
-  font-weight: bold;
-  color: #409EFF;
-  margin-bottom: 8px;
+  font-weight: 700;
+  color: #303133;
 }
 
 .stat-label {
+  margin-top: 8px;
   font-size: 14px;
-  color: #909399;
+  color: #606266;
+}
+
+.chart-large {
+  width: 100%;
+  height: 390px;
+}
+
+.chart-small {
+  width: 100%;
+  height: 340px;
+}
+
+.error-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+@media (max-width: 1200px) {
+  .chart-large {
+    height: 340px;
+  }
+
+  .chart-small {
+    height: 300px;
+  }
 }
 </style>

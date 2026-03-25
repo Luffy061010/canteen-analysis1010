@@ -6,10 +6,13 @@ from config.redis import REDISCONFIG
 
 r = redis.Redis(**REDISCONFIG, decode_responses=True)
 
-def set_key(key, value):
-    """写入字符串键值（Redis 不可用时忽略）。"""
+def set_key(key, value, ex=None):
+    """写入字符串键值（Redis 不可用时忽略）。支持可选过期秒数 ex。"""
     try:
-        r.set(key, value)
+        if ex is not None:
+            r.set(key, value, ex=ex)
+        else:
+            r.set(key, value)
     except Exception:
         return None
 

@@ -41,6 +41,7 @@
                 AND c.consumption_time &lt; DATE_ADD(#{timeEnd}, INTERVAL 1 DAY)
             </if>
         </where>
+        ORDER BY c.consumption_time DESC, c.id DESC
     </select>
     <select id="simpleConsumptionStat"
             resultType="xyz.mambaout.canteenanalysis.entity.vo.SimpleConsumptionStatVO">

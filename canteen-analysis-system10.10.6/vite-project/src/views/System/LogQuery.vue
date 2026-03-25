@@ -45,7 +45,7 @@
             <el-option label="全部模块" value="" />
             <el-option label="学生信息管理" value="student_info" />
             <el-option label="消费信息查询" value="consumption_query" />
-            <el-option label="贫困生识别" value="poverty_identification" />
+            <el-option label="用户画像模块" value="user_portrait" />
             <el-option label="成绩关联分析" value="score_correlation" />
             <el-option label="系统管理" value="system_management" />
           </el-select>
@@ -515,7 +515,8 @@ const getModuleText = (module) => {
   const textMap = {
     student_info: '学生信息管理',
     consumption_query: '消费信息查询',
-    poverty_identification: '贫困生鉴别',
+    user_portrait: '用户画像模块',
+    poverty_identification: '用户画像模块',
     score_correlation: '成绩关联分析',
     system_management: '系统管理'
   }
@@ -654,6 +655,7 @@ const getModuleText = (module) => {
 
 .detail-text {
   display: -webkit-box;
+  line-clamp: 2;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;

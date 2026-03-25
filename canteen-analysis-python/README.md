@@ -12,6 +12,11 @@ pip install -r requirements.txt
 - 编辑 `c:/Users/32828/Desktop/1010/canteen-analysis-python/main.py` 中 `DB_CONFIG`，填写 `host/user/password/database`。
 - 如果使用 Redis，确保 `utils/redis_utils.py` 中 `REDISCONFIG` 正确。
 
+（可选）开启大模型解释层（不改变聚类标签）：
+- 默认关闭，主流程不依赖大模型。
+- 设置环境变量 `LLM_EXPLAINER_ENABLED=true` 后，`GET /analysis/cluster` 将额外返回 `llmSummary` 与 `llmStudentExplanations` 字段。
+- 需要配置：`LLM_API_KEY`、`LLM_MODEL`；可选配置：`LLM_BASE_URL`（默认 `https://api.openai.com/v1`）、`LLM_TIMEOUT`（默认 `8` 秒）。
+
 3. 创建表：
 - 在数据库中执行 `models/user.sql` 和 `models/log.sql` 创建用户和日志表。
 
@@ -34,3 +39,4 @@ uvicorn main:app --reload --port 8000
 默认管理员：`lin` / `061010`（由 SQL 初始化脚本与服务启动时自动校准）。
 
 注意：在开发环境请使用安全的 `SECRET_KEY` 并保护数据库凭据。
+

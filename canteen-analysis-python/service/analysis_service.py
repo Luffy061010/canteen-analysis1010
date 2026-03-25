@@ -8,11 +8,266 @@ from sklearn.preprocessing import MinMaxScaler
 import pandas as pd
 from scipy import stats
 from utils.data_drift import EIkMeans
+from utils.llm_explainer import build_student_portrait_explanation, build_cluster_summary_explanation
 from datetime import timedelta, date, datetime
 from fastapi import HTTPException
 import pymysql
 from config import mysql
 import numpy as np
+
+
+def _safe_number(value, default=0.0):
+    try:
+        n = float(value)
+        if np.isnan(n):
+            return float(default)
+        return n
+    except Exception:
+        return float(default)
+
+
+def _build_filter_sql(base_body):
+    where_parts = ["1=1"]
+    params = []
+
+    if base_body.college:
+        where_parts.append("s.college = %s")
+        params.append(base_body.college)
+    if base_body.major:
+        where_parts.append("s.major = %s")
+        params.append(base_body.major)
+    if base_body.grade:
+        where_parts.append("s.grade = %s")
+        params.append(base_body.grade)
+    if base_body.className:
+        where_parts.append("s.class_name = %s")
+        params.append(base_body.className)
+    if base_body.studentId:
+        where_parts.append("s.student_id = %s")
+        params.append(base_body.studentId)
+
+    return " AND ".join(where_parts), params
+
+
+def get_dashboard_overview(base_body: BaseBody):
+    """首页轻量聚合数据：避免前端拼装大明细列表。"""
+    where_sql, filter_params = _build_filter_sql(base_body)
+
+    conn = pymysql.connect(**mysql.DBCONFIG)
+    cur = conn.cursor()
+
+    # 默认时间范围不使用“今天”，而是锚定到库内最新消费日期，避免历史数据集首页全 0。
+    max_date_sql = f"""
+        SELECT MAX(c.consumption_time)
+        FROM consumption_data_students_consumption c
+        INNER JOIN basic_data_student s ON s.student_id = c.student_id
+        WHERE {where_sql}
+    """
+    cur.execute(max_date_sql, filter_params)
+    global_latest_ts = cur.fetchone()[0]
+
+    time_begin = base_body.timeBegin or base_body.start_date
+    time_end = base_body.timeEnd or base_body.end_date
+    if not time_end:
+        if global_latest_ts:
+            time_end = global_latest_ts.date()
+        else:
+            time_end = date.today()
+    if not time_begin:
+        time_begin = time_end - timedelta(days=29)
+    if time_begin > time_end:
+        time_begin, time_end = time_end, time_begin
+
+    time_end_next = time_end + timedelta(days=1)
+
+    # 1) 总学生数
+    count_sql = f"SELECT COUNT(1) FROM basic_data_student s WHERE {where_sql}"
+    cur.execute(count_sql, filter_params)
+    total_students = int(cur.fetchone()[0] or 0)
+
+    # 2) 最近时间点（限定筛选范围与时间区间）
+    latest_sql = f"""
+        SELECT MAX(c.consumption_time)
+        FROM consumption_data_students_consumption c
+        INNER JOIN basic_data_student s ON s.student_id = c.student_id
+        WHERE {where_sql}
+          AND c.consumption_time >= %s
+          AND c.consumption_time < %s
+    """
+    latest_params = list(filter_params) + [time_begin, time_end_next]
+    cur.execute(latest_sql, latest_params)
+    latest_ts = cur.fetchone()[0]
+
+    latest_24h_amount = 0.0
+    latest_24h_records = 0
+    hourly_amount = [0.0] * 24
+    latest_day = None
+
+    if latest_ts:
+        latest_day = latest_ts.date().isoformat()
+        range_24h_begin = latest_ts - timedelta(hours=24)
+
+        # 3) 最近24小时统计
+        stat_sql = f"""
+            SELECT IFNULL(SUM(c.amount), 0), COUNT(1)
+            FROM consumption_data_students_consumption c
+            INNER JOIN basic_data_student s ON s.student_id = c.student_id
+            WHERE {where_sql}
+              AND c.consumption_time >= %s
+              AND c.consumption_time <= %s
+        """
+        stat_params = list(filter_params) + [range_24h_begin, latest_ts]
+        cur.execute(stat_sql, stat_params)
+        stat_row = cur.fetchone() or (0, 0)
+        latest_24h_amount = round(_safe_number(stat_row[0], 0.0), 2)
+        latest_24h_records = int(stat_row[1] or 0)
+
+        # 4) 最近一天小时分布
+        day_begin = datetime.combine(latest_ts.date(), datetime.min.time())
+        day_end = day_begin + timedelta(days=1)
+        hour_sql = f"""
+            SELECT HOUR(c.consumption_time) AS hour_num, IFNULL(SUM(c.amount), 0) AS hour_amount
+            FROM consumption_data_students_consumption c
+            INNER JOIN basic_data_student s ON s.student_id = c.student_id
+            WHERE {where_sql}
+              AND c.consumption_time >= %s
+              AND c.consumption_time < %s
+            GROUP BY HOUR(c.consumption_time)
+        """
+        hour_params = list(filter_params) + [day_begin, day_end]
+        cur.execute(hour_sql, hour_params)
+        for hour_num, hour_amount in cur.fetchall():
+            idx = int(hour_num or 0)
+            if 0 <= idx < 24:
+                hourly_amount[idx] = round(_safe_number(hour_amount, 0.0), 2)
+
+    # 5) 漂移回退分数（基于日总额CV）
+    daily_sql = f"""
+        SELECT DATE(c.consumption_time) AS d, IFNULL(SUM(c.amount), 0) AS day_amount
+        FROM consumption_data_students_consumption c
+        INNER JOIN basic_data_student s ON s.student_id = c.student_id
+        WHERE {where_sql}
+          AND c.consumption_time >= %s
+          AND c.consumption_time < %s
+        GROUP BY DATE(c.consumption_time)
+        ORDER BY DATE(c.consumption_time)
+    """
+    daily_params = list(filter_params) + [time_begin, time_end_next]
+    cur.execute(daily_sql, daily_params)
+    daily_series = [float(row[1] or 0.0) for row in cur.fetchall()]
+    drift_basis = len(daily_series) >= 3
+    if drift_basis:
+        mean_val = float(np.mean(daily_series))
+        std_val = float(np.std(daily_series))
+        cv = (std_val / mean_val) if mean_val > 0 else 0.0
+        drift_score = max(0.0, min(100.0, cv * 100.0))
+        drift_note = f"回退估算: {len(daily_series)} 天"
+    else:
+        drift_score = 0.0
+        drift_note = "消费记录不足3天"
+
+    # 6) 消费层级占比（按日均消费分位）
+    summary_df = get_data_summary(BaseBody(
+        college=base_body.college,
+        major=base_body.major,
+        grade=base_body.grade,
+        className=base_body.className,
+        studentId=base_body.studentId,
+        timeBegin=time_begin,
+        timeEnd=time_end,
+    ))
+
+    level_counts = {
+        "低消费": 0,
+        "较低消费": 0,
+        "中消费": 0,
+        "高消费": 0,
+    }
+    if not summary_df.empty:
+        amount_cols = ["breakfast_avg_amount", "lunch_avg_amount", "dinner_avg_amount"]
+        summary_df = summary_df.copy()
+        summary_df["dailyAvg"] = summary_df[amount_cols].sum(axis=1)
+        values = [float(v) for v in summary_df["dailyAvg"].tolist() if float(v) > 0]
+        if values:
+            q1 = float(np.quantile(values, 0.25))
+            q2 = float(np.quantile(values, 0.50))
+            q3 = float(np.quantile(values, 0.75))
+            for v in values:
+                if v <= q1:
+                    level_counts["低消费"] += 1
+                elif v <= q2:
+                    level_counts["较低消费"] += 1
+                elif v <= q3:
+                    level_counts["中消费"] += 1
+                else:
+                    level_counts["高消费"] += 1
+
+    # 7) GPA直方图（每个学生最新学期）
+    gpa_sql = f"""
+        SELECT bs.gpa
+        FROM basic_data_score bs
+        JOIN (
+            SELECT student_id, MAX(term) AS term
+            FROM basic_data_score
+            GROUP BY student_id
+        ) t ON t.student_id = bs.student_id AND t.term = bs.term
+        JOIN basic_data_student s ON s.student_id = bs.student_id
+        WHERE {where_sql}
+    """
+    cur.execute(gpa_sql, filter_params)
+    gpa_values = [float(row[0]) for row in cur.fetchall() if row[0] is not None]
+
+    gpa_bins = [0, 0, 0, 0, 0, 0]
+    for g in gpa_values:
+        if g < 2.0:
+            gpa_bins[0] += 1
+        elif g < 2.5:
+            gpa_bins[1] += 1
+        elif g < 3.0:
+            gpa_bins[2] += 1
+        elif g < 3.5:
+            gpa_bins[3] += 1
+        elif g <= 4.0:
+            gpa_bins[4] += 1
+        else:
+            gpa_bins[5] += 1
+
+    cur.close()
+    conn.close()
+
+    return {
+        "statistics": {
+            "totalStudents": total_students,
+            "latest24hAmount": latest_24h_amount,
+            "latest24hRecords": latest_24h_records,
+        },
+        "hourly": {
+            "latestDay": latest_day,
+            "amount": hourly_amount,
+        },
+        "levelDistribution": [
+            {"name": "低消费", "value": level_counts["低消费"]},
+            {"name": "较低消费", "value": level_counts["较低消费"]},
+            {"name": "中消费", "value": level_counts["中消费"]},
+            {"name": "高消费", "value": level_counts["高消费"]},
+        ],
+        "gpaHistogram": {
+            "labels": ["<2.0", "2.0-2.5", "2.5-3.0", "3.0-3.5", "3.5-4.0", ">4.0"],
+            "values": gpa_bins,
+        },
+        "drift": {
+            "score": round(float(drift_score), 2),
+            "hasData": drift_basis,
+            "note": drift_note,
+        },
+        "meta": {
+            "timeBegin": time_begin.isoformat(),
+            "timeEnd": time_end.isoformat(),
+            "dailySeriesCount": len(daily_series),
+            "summaryStudentCount": int(len(summary_df)) if summary_df is not None else 0,
+            "gpaSampleCount": len(gpa_values),
+        },
+    }
 
 
 def normalize_student_id(value):
@@ -24,24 +279,248 @@ def normalize_student_id(value):
     sid = sid.lstrip("0") or "0"
     return sid
 
+
+def get_cluster_details(student_ids: list[str], time_begin=None, time_end=None, include_llm: bool = False):
+    """按学号批量返回画像详情，用于分页场景下的按页补全。"""
+    if not student_ids:
+        return []
+
+    normalized_ids = []
+    sid_seen = set()
+    for sid in student_ids:
+        sid_text = normalize_student_id(sid)
+        if not sid_text or sid_text in sid_seen:
+            continue
+        sid_seen.add(sid_text)
+        normalized_ids.append(sid_text)
+
+    if not normalized_ids:
+        return []
+
+    conn = pymysql.connect(**mysql.DBCONFIG)
+    cur = conn.cursor()
+
+    cur.execute("SHOW COLUMNS FROM basic_data_student")
+    student_columns = {row[0] for row in cur.fetchall()}
+    gender_col = "gender" if "gender" in student_columns else ("sex" if "sex" in student_columns else None)
+
+    sid_placeholders = ",".join(["%s"] * len(normalized_ids))
+
+    # 学生基础信息
+    student_sql = "SELECT student_id, name, college, major, class_name, grade"
+    if gender_col:
+        student_sql += f", {gender_col}"
+    student_sql += f" FROM basic_data_student WHERE student_id IN ({sid_placeholders})"
+    cur.execute(student_sql, normalized_ids)
+    student_rows = cur.fetchall()
+
+    student_map = {}
+    for row in student_rows:
+        sid_key = normalize_student_id(row[0])
+        raw_gender = row[6] if gender_col and len(row) > 6 else None
+        gender_text = "-"
+        if raw_gender is not None:
+            g = str(raw_gender).strip().upper()
+            if g == "M":
+                gender_text = "男"
+            elif g == "F":
+                gender_text = "女"
+            else:
+                gender_text = str(raw_gender)
+        student_map[sid_key] = {
+            "name": row[1] or "-",
+            "college": row[2] or "-",
+            "major": row[3] or "-",
+            "className": row[4] or "-",
+            "grade": row[5] or "-",
+            "gender": gender_text
+        }
+
+    # 消费统计
+    tx_sql = f"""
+        SELECT
+            student_id,
+            COUNT(*) AS tx_count,
+            SUM(amount) AS total_amount,
+            MAX(amount) AS max_amount,
+            MIN(amount) AS min_amount,
+            COUNT(DISTINCT DATE_FORMAT(consumption_time, '%%Y-%%m')) AS month_span,
+            SUM(CASE WHEN meal_type='早' THEN 1 ELSE 0 END) AS breakfast_cnt,
+            SUM(CASE WHEN meal_type='中' THEN 1 ELSE 0 END) AS lunch_cnt,
+            SUM(CASE WHEN meal_type='晚' THEN 1 ELSE 0 END) AS dinner_cnt,
+            SUM(CASE WHEN meal_type NOT IN ('早','中','晚') OR meal_type IS NULL THEN 1 ELSE 0 END) AS night_cnt
+        FROM consumption_data_students_consumption
+        WHERE student_id IN ({sid_placeholders})
+    """
+    tx_params = list(normalized_ids)
+    if time_begin and time_end:
+        tx_sql += " AND consumption_time BETWEEN %s AND %s"
+        tx_params.extend([time_begin, time_end])
+    tx_sql += " GROUP BY student_id"
+    cur.execute(tx_sql, tx_params)
+    tx_rows = cur.fetchall()
+
+    tx_map = {}
+    for row in tx_rows:
+        sid_key = normalize_student_id(row[0])
+        tx_count = int(row[1] or 0)
+        total_amount = float(row[2] or 0.0)
+        max_amount = float(row[3] or 0.0)
+        min_amount = float(row[4] or 0.0)
+        month_span = int(row[5] or 0)
+        if month_span <= 0:
+            month_span = 1
+
+        period_counts = {
+            "早餐": int(row[6] or 0),
+            "午餐": int(row[7] or 0),
+            "晚餐": int(row[8] or 0),
+            "夜宵": int(row[9] or 0)
+        }
+        peak_period = max(period_counts, key=period_counts.get) if tx_count else "-"
+        tx_map[sid_key] = {
+            "monthAvgCount": round(tx_count / month_span, 2),
+            "monthAvgAmount": round(total_amount / month_span, 2),
+            "monthTotalAmount": round(total_amount, 2),
+            "singleMax": round(max_amount, 2),
+            "singleMin": round(min_amount, 2),
+            "peakPeriod": peak_period,
+            "favoriteWindow": "-"
+        }
+
+    # 常去窗口
+    win_sql = f"""
+        SELECT student_id, window_id, COUNT(*) AS freq
+        FROM consumption_data_students_consumption
+        WHERE student_id IN ({sid_placeholders})
+    """
+    win_params = list(normalized_ids)
+    if time_begin and time_end:
+        win_sql += " AND consumption_time BETWEEN %s AND %s"
+        win_params.extend([time_begin, time_end])
+    win_sql += " GROUP BY student_id, window_id ORDER BY student_id, freq DESC"
+    cur.execute(win_sql, win_params)
+    win_rows = cur.fetchall()
+
+    win_seen = set()
+    for row in win_rows:
+        sid_key = normalize_student_id(row[0])
+        if sid_key in win_seen:
+            continue
+        win_seen.add(sid_key)
+        tx_map.setdefault(sid_key, {
+            "monthAvgCount": 0.0,
+            "monthAvgAmount": 0.0,
+            "monthTotalAmount": 0.0,
+            "singleMax": 0.0,
+            "singleMin": 0.0,
+            "peakPeriod": "-",
+            "favoriteWindow": "-"
+        })
+        tx_map[sid_key]["favoriteWindow"] = str(row[1]) if row[1] is not None else "-"
+
+    # 最新 GPA
+    gpa_sql = f"""
+        SELECT bs.student_id, bs.gpa
+        FROM basic_data_score bs
+        JOIN (
+            SELECT student_id, MAX(term) AS term
+            FROM basic_data_score
+            WHERE student_id IN ({sid_placeholders})
+            GROUP BY student_id
+        ) t ON t.student_id = bs.student_id AND t.term = bs.term
+    """
+    cur.execute(gpa_sql, normalized_ids)
+    gpa_rows = cur.fetchall()
+    gpa_map = {normalize_student_id(row[0]): round(float(row[1] or 0.0), 2) for row in gpa_rows}
+
+    cur.close()
+    conn.close()
+
+    results = []
+    for sid in normalized_ids:
+        info = student_map.get(sid, {})
+        tx = tx_map.get(sid, {
+            "monthAvgCount": 0.0,
+            "monthAvgAmount": 0.0,
+            "monthTotalAmount": 0.0,
+            "singleMax": 0.0,
+            "singleMin": 0.0,
+            "peakPeriod": "-",
+            "favoriteWindow": "-"
+        })
+        row = {
+            "studentId": sid,
+            "name": info.get("name", "-"),
+            "gender": info.get("gender", "-"),
+            "college": info.get("college", "-"),
+            "major": info.get("major", "-"),
+            "className": info.get("className", "-"),
+            "grade": info.get("grade", "-"),
+            "gpa": gpa_map.get(sid, 0.0),
+            "monthAvgCount": tx.get("monthAvgCount", 0.0),
+            "monthAvgAmount": tx.get("monthAvgAmount", 0.0),
+            "monthTotalAmount": tx.get("monthTotalAmount", 0.0),
+            "singleMax": tx.get("singleMax", 0.0),
+            "singleMin": tx.get("singleMin", 0.0),
+            "peakPeriod": tx.get("peakPeriod", "-"),
+            "favoriteWindow": tx.get("favoriteWindow", "-"),
+            "llmExplanation": ""
+        }
+        results.append(row)
+
+    if include_llm and len(results) <= 20:
+        for row in results:
+            try:
+                row["llmExplanation"] = build_student_portrait_explanation(row) or ""
+            except Exception:
+                row["llmExplanation"] = ""
+
+    return results
+
 def analysis_cluster(cluster_body:ClusterBody):
     """消费聚类分析：生成簇中心、样本标签、分布数据与图表点位。"""
+    page = int(cluster_body.page or 1)
+    page_size = int(cluster_body.pageSize or 20)
+    if page < 1:
+        page = 1
+    if page_size < 1:
+        page_size = 20
+    page_size = min(page_size, 200)
+
     df = get_data_summary(cluster_body)
     if df.empty:
-        return {"centers": [], "data": [], "results": [], "clusterData": [], "distributionData": []}
+        return {
+            "centers": [],
+            "data": [],
+            "results": [],
+            "clusterData": [],
+            "distributionData": [],
+            "total": 0,
+            "page": page,
+            "pageSize": page_size
+        }
+
+    # 学号查询时，聚类建模应基于同筛选群体而不是单个学生，否则会退化成单样本单簇。
+    model_df = df
+    if cluster_body.studentId:
+        cohort_body = cluster_body.model_copy(update={"studentId": None, "includeDetails": False, "page": 1, "pageSize": 20})
+        cohort_df = get_data_summary(cohort_body)
+        if not cohort_df.empty:
+            model_df = cohort_df
 
     # 计算日均消费与日均次数
     amount_cols = ["breakfast_avg_amount", "lunch_avg_amount", "dinner_avg_amount"]
     count_cols = ["breakfast_avg_count", "lunch_avg_count", "dinner_avg_count"]
-    df["dailyAvg"] = df[amount_cols].sum(axis=1)
-    df["dailyCount"] = df[count_cols].sum(axis=1)
+    model_df["dailyAvg"] = model_df[amount_cols].sum(axis=1)
+    model_df["dailyCount"] = model_df[count_cols].sum(axis=1)
 
-    feature_df = df[["dailyAvg", "dailyCount"]].copy()
+    feature_df = model_df[["dailyAvg", "dailyCount"]].copy()
     min_max_scaler = MinMaxScaler()
     scalared_df = min_max_scaler.fit_transform(feature_df)
 
     # 兼容 n_clusters / clusterNums 字段
-    n_samples = len(df)
+    n_samples = len(model_df)
     n_clusters_val = cluster_body.n_clusters if cluster_body.n_clusters is not None else cluster_body.clusterNums
     n_clusters = int(n_clusters_val or 4)
     # 当样本很少（例如只筛选一个学号）时，避免 KMeans 报错
@@ -60,48 +539,288 @@ def analysis_cluster(cluster_body:ClusterBody):
     centers_inv = min_max_scaler.inverse_transform(centers)
     centers_df = pd.DataFrame(centers_inv, columns=["dailyAvg", "dailyCount"])
 
-    df["label"] = labels
+    model_df["label"] = labels
 
-    # 拉取学生姓名/学院映射
-    def normalize_student_id(value):
-        if value is None:
-            return ""
-        sid = str(value).strip()
-        if sid.isdigit():
-            sid = sid.lstrip("0") or "0"
-        return sid
-
-    conn = pymysql.connect(**mysql.DBCONFIG)
-    cur = conn.cursor()
-    # 取出姓名、学院、专业、班级，方便前端展示（可按学号过滤加速）
     if cluster_body.studentId:
-        cur.execute(
-            "SELECT student_id, name, college, major, class_name FROM basic_data_student WHERE student_id=%s",
-            (cluster_body.studentId,)
-        )
-    else:
-        cur.execute("SELECT student_id, name, college, major, class_name FROM basic_data_student")
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
-    name_map = {}
-    for r in rows:
-        sid_key = normalize_student_id(r[0])
-        if not sid_key:
-            continue
-        name_map[sid_key] = {
-            "name": r[1] or "-",
-            "college": r[2] or "-",
-            "major": r[3] or "-",
-            "className": r[4] or "-"
-        }
+        sid_norm = normalize_student_id(cluster_body.studentId)
+        df = model_df[model_df.index.to_series().astype(str).apply(normalize_student_id) == sid_norm].copy()
+        if df.empty:
+            df = get_data_summary(cluster_body)
+            if df.empty:
+                return {
+                    "centers": centers_df.to_dict(orient="records"),
+                    "data": [],
+                    "results": [],
+                    "clusterData": [],
+                    "distributionData": [],
+                    "llmSummary": None,
+                    "llmStudentExplanations": {},
+                    "total": 0,
+                    "page": 1,
+                    "pageSize": page_size
+                }
+            df["dailyAvg"] = df[amount_cols].sum(axis=1)
+            df["dailyCount"] = df[count_cols].sum(axis=1)
+            # 兜底：按中心最近邻确定标签，避免无标签导致前端分层异常。
+            fallback_feature = df[["dailyAvg", "dailyCount"]].copy()
+            fallback_scaled = min_max_scaler.transform(fallback_feature)
+            fallback_labels = []
+            for vec in fallback_scaled:
+                dists = np.sum((centers - vec) ** 2, axis=1)
+                fallback_labels.append(int(np.argmin(dists)))
+            df["label"] = fallback_labels
 
-    # 聚类类型命名（按日均消费排序，最低为贫困）
+    # 轻量模式：用于首页等只需要聚类占比/散点的场景，避免大范围全量明细查询导致变慢
+    detail_mode = bool(cluster_body.includeDetails) or bool(cluster_body.studentId)
+
+    # 聚类类型命名（按日均消费排序）
     center_order = centers_df["dailyAvg"].sort_values().index.tolist()
-    type_names = ["贫困生", "低消费", "中等消费", "高消费", "高消费2", "高消费3"]
+    type_names = ["低消费", "较低消费", "中消费", "高消费", "高消费2", "高消费3"]
     label_to_type = {}
     for rank, label_idx in enumerate(center_order):
         label_to_type[label_idx] = type_names[min(rank, len(type_names)-1)]
+
+    if not detail_mode:
+        results = []
+        cluster_points = []
+        distribution_count = {}
+
+        for sid, row in df.iterrows():
+            sid_str = str(sid).strip()
+            daily = float(row["dailyAvg"])
+            daily_count = float(row["dailyCount"])
+            label = int(row["label"])
+            cluster_type = label_to_type.get(label, "普通消费")
+
+            results.append({
+                "studentId": sid_str,
+                "dailyAvg": round(daily, 2),
+                "dailyCount": round(daily_count, 2),
+                "clusterType": cluster_type,
+                "consumptionType": cluster_type,
+                "consumptionGroup": cluster_type
+            })
+
+            cluster_points.append({
+                "x": round(daily, 2),
+                "y": round(daily_count, 2),
+                "label": cluster_type,
+                "studentId": sid_str
+            })
+            distribution_count[cluster_type] = distribution_count.get(cluster_type, 0) + 1
+
+        distribution_data = [{"name": k, "value": v} for k, v in distribution_count.items()]
+        return {
+            "centers": centers_df.to_dict(orient="records"),
+            "data": feature_df.to_dict(orient="records"),
+            "results": results,
+            "clusterData": cluster_points,
+            "distributionData": distribution_data,
+            "llmSummary": None,
+            "llmStudentExplanations": {},
+            "total": len(results),
+            "page": 1,
+            "pageSize": len(results)
+        }
+
+    all_sid_values = [str(i).strip() for i in df.index.tolist()]
+    if cluster_body.studentId:
+        sid_values = [str(cluster_body.studentId).strip()]
+    else:
+        start_index = (page - 1) * page_size
+        end_index = start_index + page_size
+        sid_values = all_sid_values[start_index:end_index]
+
+    def default_tx_stats():
+        return {
+            "monthAvgCount": 0.0,
+            "monthAvgAmount": 0.0,
+            "monthTotalAmount": 0.0,
+            "singleMax": 0.0,
+            "singleMin": 0.0,
+            "peakPeriod": "-",
+            "favoriteWindow": "-"
+        }
+
+    student_map = {}
+    tx_stats_map = {}
+    gpa_map = {}
+    if sid_values:
+        conn = pymysql.connect(**mysql.DBCONFIG)
+        cur = conn.cursor()
+        sid_set = set(normalize_student_id(i) for i in sid_values)
+        use_all_scope = (
+            len(sid_values) > 1000
+            and not cluster_body.studentId
+            and not cluster_body.college
+            and not cluster_body.major
+            and not cluster_body.grade
+            and not cluster_body.className
+        )
+
+        # 拉取学生基础信息（含可选 gender/sex）
+        cur.execute("SHOW COLUMNS FROM basic_data_student")
+        student_columns = {row[0] for row in cur.fetchall()}
+        gender_col = "gender" if "gender" in student_columns else ("sex" if "sex" in student_columns else None)
+
+        sid_placeholders = ",".join(["%s"] * len(sid_values))
+        student_sql = "SELECT student_id, name, college, major, class_name, grade"
+        if gender_col:
+            student_sql += f", {gender_col}"
+        student_sql += " FROM basic_data_student"
+        if use_all_scope:
+            cur.execute(student_sql)
+        else:
+            student_sql += f" WHERE student_id IN ({sid_placeholders})"
+            cur.execute(student_sql, sid_values)
+        student_rows = cur.fetchall()
+
+        for row in student_rows:
+            sid_key = normalize_student_id(row[0])
+            if not sid_key:
+                continue
+            if sid_key not in sid_set:
+                continue
+            raw_gender = row[6] if gender_col and len(row) > 6 else None
+            gender_text = "-"
+            if raw_gender is not None:
+                gender_upper = str(raw_gender).strip().upper()
+                if gender_upper == "M":
+                    gender_text = "男"
+                elif gender_upper == "F":
+                    gender_text = "女"
+                else:
+                    gender_text = str(raw_gender)
+
+            student_map[sid_key] = {
+                "name": row[1] or "-",
+                "college": row[2] or "-",
+                "major": row[3] or "-",
+                "className": row[4] or "-",
+                "grade": row[5] or "-",
+                "gender": gender_text
+            }
+
+        # 拉取消费统计（平均月消费次数、平均月消费金额、极值、高峰餐别）
+        tx_sql = """
+            SELECT
+                student_id,
+                COUNT(*) AS tx_count,
+                SUM(amount) AS total_amount,
+                MAX(amount) AS max_amount,
+                MIN(amount) AS min_amount,
+                COUNT(DISTINCT DATE_FORMAT(consumption_time, '%%Y-%%m')) AS month_span,
+                SUM(CASE WHEN meal_type='早' THEN 1 ELSE 0 END) AS breakfast_cnt,
+                SUM(CASE WHEN meal_type='中' THEN 1 ELSE 0 END) AS lunch_cnt,
+                SUM(CASE WHEN meal_type='晚' THEN 1 ELSE 0 END) AS dinner_cnt,
+                SUM(CASE WHEN meal_type NOT IN ('早','中','晚') OR meal_type IS NULL THEN 1 ELSE 0 END) AS night_cnt
+            FROM consumption_data_students_consumption
+            WHERE 1=1
+        """
+        tx_params = []
+        if not use_all_scope:
+            tx_sql += f" AND student_id IN ({sid_placeholders})"
+            tx_params.extend(sid_values)
+        if cluster_body.timeBegin and cluster_body.timeEnd:
+            tx_sql += " AND consumption_time BETWEEN %s AND %s"
+            tx_params.extend([cluster_body.timeBegin, cluster_body.timeEnd])
+        tx_sql += " GROUP BY student_id"
+        cur.execute(tx_sql, tx_params)
+        tx_rows = cur.fetchall()
+        for row in tx_rows:
+            sid_key = normalize_student_id(row[0])
+            if sid_key not in sid_set:
+                continue
+            tx_count = int(row[1] or 0)
+            total_amount = float(row[2] or 0.0)
+            max_amount = float(row[3] or 0.0)
+            min_amount = float(row[4] or 0.0)
+            month_span = int(row[5] or 0)
+            if month_span <= 0:
+                month_span = 1
+            breakfast_cnt = int(row[6] or 0)
+            lunch_cnt = int(row[7] or 0)
+            dinner_cnt = int(row[8] or 0)
+            night_cnt = int(row[9] or 0)
+
+            period_counts = {
+                "早餐": breakfast_cnt,
+                "午餐": lunch_cnt,
+                "晚餐": dinner_cnt,
+                "夜宵": night_cnt
+            }
+            peak_period = max(period_counts, key=period_counts.get) if tx_count else "-"
+            tx_stats_map[sid_key] = {
+                "monthAvgCount": round(tx_count / month_span, 2),
+                "monthAvgAmount": round(total_amount / month_span, 2),
+                "monthTotalAmount": round(total_amount, 2),
+                "singleMax": round(max_amount, 2),
+                "singleMin": round(min_amount, 2),
+                "peakPeriod": peak_period,
+                "favoriteWindow": "-"
+            }
+
+        # 拉取最常去窗口
+        win_sql = """
+            SELECT student_id, window_id, COUNT(*) AS freq
+            FROM consumption_data_students_consumption
+            WHERE 1=1
+        """
+        win_params = []
+        if not use_all_scope:
+            win_sql += f" AND student_id IN ({sid_placeholders})"
+            win_params.extend(sid_values)
+        if cluster_body.timeBegin and cluster_body.timeEnd:
+            win_sql += " AND consumption_time BETWEEN %s AND %s"
+            win_params.extend([cluster_body.timeBegin, cluster_body.timeEnd])
+        win_sql += " GROUP BY student_id, window_id ORDER BY student_id, freq DESC"
+        cur.execute(win_sql, win_params)
+        win_rows = cur.fetchall()
+        seen = set()
+        for row in win_rows:
+            sid_key = normalize_student_id(row[0])
+            if sid_key not in sid_set:
+                continue
+            if sid_key in seen:
+                continue
+            seen.add(sid_key)
+            if sid_key not in tx_stats_map:
+                tx_stats_map[sid_key] = default_tx_stats()
+            tx_stats_map[sid_key]["favoriteWindow"] = str(row[1]) if row[1] is not None else "-"
+
+        # 拉取最新学期 GPA
+        gpa_sql = """
+            SELECT bs.student_id, bs.gpa
+            FROM basic_data_score bs
+            JOIN (
+                SELECT student_id, MAX(term) AS term
+                FROM basic_data_score
+                GROUP BY student_id
+            ) t ON t.student_id = bs.student_id AND t.term = bs.term
+        """
+        if use_all_scope:
+            cur.execute(gpa_sql)
+        else:
+            gpa_sql = f"""
+                SELECT bs.student_id, bs.gpa
+                FROM basic_data_score bs
+                JOIN (
+                    SELECT student_id, MAX(term) AS term
+                    FROM basic_data_score
+                    WHERE student_id IN ({sid_placeholders})
+                    GROUP BY student_id
+                ) t ON t.student_id = bs.student_id AND t.term = bs.term
+            """
+            cur.execute(gpa_sql, sid_values)
+        gpa_rows = cur.fetchall()
+        for row in gpa_rows:
+            sid_key = normalize_student_id(row[0])
+            if sid_key not in sid_set:
+                continue
+            gpa_map[sid_key] = round(float(row[1] or 0.0), 2)
+
+        cur.close()
+        conn.close()
 
     results = []
     cluster_points = []
@@ -109,31 +828,44 @@ def analysis_cluster(cluster_body:ClusterBody):
 
     for sid, row in df.iterrows():
         sid_str = str(sid).strip()
-        info = name_map.get(normalize_student_id(sid_str), {})
+        sid_key = normalize_student_id(sid_str)
+        info = student_map.get(sid_key, {})
+        tx_stats = tx_stats_map.get(sid_key, default_tx_stats())
         name = info.get("name", "-")
         college = info.get("college", "-")
         major = info.get("major", "-")
         class_name = info.get("className", "-")
+        grade = info.get("grade", "-")
+        gender = info.get("gender", "-")
         daily = float(row["dailyAvg"])
         daily_count = float(row["dailyCount"])
         label = int(row["label"])
         cluster_type = label_to_type.get(label, "普通消费")
 
-        center_vec = centers[label]
-        point_vec = scalared_df[df.index.get_loc(sid)]
-        poverty_index = round(1.0 - daily / (centers_df["dailyAvg"].max() + 1e-6), 4)
+        gpa_val = float(gpa_map.get(sid_key, 0.0))
 
         results.append({
             "studentId": sid_str,
             "name": name,
+            "gender": gender,
             "college": college,
             "major": major,
             "className": class_name,
+            "grade": grade,
             "monthlyAvg": round(daily, 2),
             "dailyAvg": round(daily, 2),
             "dailyCount": round(daily_count, 2),
+            "gpa": round(gpa_val, 2),
+            "monthAvgCount": tx_stats.get("monthAvgCount", 0.0),
+            "monthAvgAmount": tx_stats.get("monthAvgAmount", 0.0),
+            "monthTotalAmount": tx_stats.get("monthTotalAmount", 0.0),
+            "singleMax": tx_stats.get("singleMax", 0.0),
+            "singleMin": tx_stats.get("singleMin", 0.0),
+            "peakPeriod": tx_stats.get("peakPeriod", "-"),
+            "favoriteWindow": tx_stats.get("favoriteWindow", "-"),
             "clusterType": cluster_type,
-            "povertyIndex": round(poverty_index, 4)
+            "consumptionType": cluster_type,
+            "consumptionGroup": cluster_type
         })
 
         cluster_points.append({
@@ -142,8 +874,11 @@ def analysis_cluster(cluster_body:ClusterBody):
             "label": cluster_type,
             "studentId": sid_str,
             "name": name,
+            "college": college,
             "major": major,
-            "className": class_name
+            "className": class_name,
+            "grade": grade,
+            "gender": gender
         })
 
         distribution_count[cluster_type] = distribution_count.get(cluster_type, 0) + 1
@@ -152,12 +887,56 @@ def analysis_cluster(cluster_body:ClusterBody):
         {"name": k, "value": v} for k, v in distribution_count.items()
     ]
 
+    # 可选：大模型解释层（不参与标签判定，失败自动降级）
+    llm_summary = None
+    llm_student_explanations = {}
+    try:
+        sample_size = int(len(results))
+        low_count = int(distribution_count.get("低消费", 0))
+        low_ratio = round((low_count / sample_size) * 100, 2) if sample_size else 0.0
+        llm_summary = build_cluster_summary_explanation({
+            "sampleSize": sample_size,
+            "distribution": distribution_data,
+            "lowRatio": low_ratio,
+        })
+
+        # 控制调用成本：仅在样本较小时生成个体解释，避免全量卡顿
+        if len(results) <= 80:
+            for row in results[:30]:
+                text = build_student_portrait_explanation(row)
+                if text:
+                    llm_student_explanations[str(row.get("studentId", ""))] = text
+    except Exception:
+        llm_summary = None
+        llm_student_explanations = {}
+
+    for row in results:
+        sid = str(row.get("studentId", ""))
+        row["llmExplanation"] = llm_student_explanations.get(sid) or ""
+
+    total_count = len(results)
+    start_index = (page - 1) * page_size
+    end_index = start_index + page_size
+    paged_results = results[start_index:end_index]
+
+    max_scatter_points = 1600
+    if len(cluster_points) > max_scatter_points:
+        step = max(1, len(cluster_points) // max_scatter_points)
+        sampled_cluster_points = cluster_points[::step][:max_scatter_points]
+    else:
+        sampled_cluster_points = cluster_points
+
     return {
         "centers": centers_df.to_dict(orient="records"),
         "data": feature_df.to_dict(orient="records"),
-        "results": results,
-        "clusterData": cluster_points,
-        "distributionData": distribution_data
+        "results": paged_results,
+        "clusterData": sampled_cluster_points,
+        "distributionData": distribution_data,
+        "llmSummary": llm_summary,
+        "llmStudentExplanations": llm_student_explanations,
+        "total": total_count,
+        "page": page,
+        "pageSize": page_size
     }
 
 def analysis_drift(drift_body:DriftBody):
@@ -523,7 +1302,88 @@ def analysis_correlation(correlation_body:CorrelationBody):
         result_row["qValue"] = float(q_val)
         result_row["significance"] = "显著" if q_val < 0.05 else "不显著"
 
+    def classify_peak_period(tx_df: pd.DataFrame) -> str:
+        if tx_df is None or tx_df.empty:
+            return "-"
+        periods = {"早": 0, "中": 0, "晚": 0, "夜宵": 0}
+        for _, tx in tx_df.iterrows():
+            ts = tx.get("consumption_time")
+            meal = str(tx.get("meal_type") or "").strip()
+            label = None
+            if meal in ("早", "中", "晚"):
+                label = meal
+            else:
+                hour = None
+                if isinstance(ts, datetime):
+                    hour = ts.hour
+                elif ts is not None:
+                    try:
+                        hour = pd.to_datetime(ts).hour
+                    except Exception:
+                        hour = None
+                if hour is not None:
+                    if 6 <= hour < 10:
+                        label = "早"
+                    elif 10 <= hour < 15:
+                        label = "中"
+                    elif 15 <= hour < 21:
+                        label = "晚"
+                    else:
+                        label = "夜宵"
+            if label is None:
+                label = "夜宵"
+            periods[label] += 1
+        peak_count = max(periods.values()) if periods else 0
+        if peak_count <= 0:
+            return "-"
+        peak_labels = [k for k, v in periods.items() if v == peak_count]
+        return "/".join(peak_labels)
+
+    def calc_stability(tx_df: pd.DataFrame) -> dict:
+        if tx_df is None or tx_df.empty:
+            return {
+                "stabilityText": "数据不足",
+                "volatility": None,
+                "isRegular": None
+            }
+
+        daily = tx_df.copy()
+        daily["consumption_time"] = pd.to_datetime(daily["consumption_time"], errors="coerce")
+        daily = daily.dropna(subset=["consumption_time"])
+        if daily.empty:
+            return {
+                "stabilityText": "数据不足",
+                "volatility": None,
+                "isRegular": None
+            }
+
+        daily["dt"] = daily["consumption_time"].dt.date
+        daily_amount = daily.groupby("dt")["amount"].sum()
+        mean_val = float(daily_amount.mean()) if len(daily_amount) else 0.0
+        std_val = float(daily_amount.std(ddof=0)) if len(daily_amount) else 0.0
+
+        if mean_val <= 0:
+            cv = 0.0
+        else:
+            cv = std_val / mean_val
+
+        is_regular = cv < 0.5
+        if cv < 0.25:
+            level = "低波动"
+        elif cv < 0.5:
+            level = "中波动"
+        else:
+            level = "高波动"
+
+        regular_text = "规律" if is_regular else "不规律"
+        return {
+            "stabilityText": f"{level}（波动系数 {cv:.2f}，{regular_text}）",
+            "volatility": round(cv, 4),
+            "isRegular": is_regular
+        }
+
     student_profile = None
+    student_point = None
     if correlation_body.studentId:
         sid = normalize_student_id(correlation_body.studentId)
 
@@ -556,12 +1416,6 @@ def analysis_correlation(correlation_body:CorrelationBody):
 
         conn = pymysql.connect(**mysql.DBCONFIG)
         cur = conn.cursor()
-        cur.execute(
-            "SELECT student_id, name, college, major, class_name, grade FROM basic_data_student WHERE student_id=%s",
-            (correlation_body.studentId,)
-        )
-        srow = cur.fetchone()
-
         # 学生绩点：独立查询，避免因消费缺失导致绩点被错误置为 0
         if term:
             cur.execute(
@@ -601,12 +1455,85 @@ def analysis_correlation(correlation_body:CorrelationBody):
             if daily_avg <= q50:
                 return "低消费"
             if daily_avg <= q80:
-                return "中等消费"
+                return "中消费"
             return "高消费"
+
+        # 扩展画像：消费高峰、稳定性、单笔极值、常去窗口、月度指标
+        tx_sql = """
+            SELECT amount, meal_type, window_id, consumption_time
+            FROM consumption_data_students_consumption
+            WHERE student_id=%s
+        """
+        tx_params = [correlation_body.studentId]
+        if time_begin and time_end:
+            tx_sql += " AND consumption_time BETWEEN %s AND %s"
+            tx_params.extend([time_begin, time_end])
+
+        conn = pymysql.connect(**mysql.DBCONFIG)
+        cur = conn.cursor()
+        cur.execute(tx_sql, tx_params)
+        tx_rows = cur.fetchall()
+
+        cur.execute("SHOW COLUMNS FROM basic_data_student")
+        col_names = {row[0] for row in cur.fetchall()}
+        gender_col = "gender" if "gender" in col_names else ("sex" if "sex" in col_names else None)
+        student_sql = "SELECT student_id, name, college, major, class_name, grade"
+        if gender_col:
+            student_sql += f", {gender_col}"
+        student_sql += " FROM basic_data_student WHERE student_id=%s"
+        cur.execute(student_sql, (correlation_body.studentId,))
+        srow = cur.fetchone()
+        cur.close()
+        conn.close()
+
+        tx_df = pd.DataFrame(tx_rows, columns=["amount", "meal_type", "window_id", "consumption_time"]) if tx_rows else pd.DataFrame(columns=["amount", "meal_type", "window_id", "consumption_time"])
+        if not tx_df.empty:
+            tx_df["amount"] = pd.to_numeric(tx_df["amount"], errors="coerce").fillna(0.0)
+            tx_df["consumption_time"] = pd.to_datetime(tx_df["consumption_time"], errors="coerce")
+
+        tx_count = int(len(tx_df))
+
+        monthly_totals = pd.Series(dtype=float)
+        monthly_counts = pd.Series(dtype=float)
+        if not tx_df.empty:
+            valid_tx = tx_df.dropna(subset=["consumption_time"]).copy()
+            if not valid_tx.empty:
+                valid_tx["month"] = valid_tx["consumption_time"].dt.to_period("M")
+                monthly_totals = valid_tx.groupby("month")["amount"].sum()
+                monthly_counts = valid_tx.groupby("month")["amount"].count()
+
+        avg_month_total = float(monthly_totals.mean()) if len(monthly_totals) else 0.0
+        avg_month_count = float(monthly_counts.mean()) if len(monthly_counts) else 0.0
+        avg_month_amount = (avg_month_total / avg_month_count) if avg_month_count > 0 else 0.0
+
+        max_amount = float(tx_df["amount"].max()) if tx_count else 0.0
+        min_amount = float(tx_df["amount"].min()) if tx_count else 0.0
+
+        favorite_window = "-"
+        if tx_count and "window_id" in tx_df.columns:
+            window_counts = tx_df["window_id"].dropna().astype(str).value_counts()
+            if len(window_counts):
+                favorite_window = str(window_counts.index[0])
+
+        peak_period = classify_peak_period(tx_df)
+        stability = calc_stability(tx_df)
+
+        gender_val = "-"
+        if srow and len(srow) >= 7:
+            raw_gender = srow[6]
+            if raw_gender is not None:
+                g = str(raw_gender).strip().upper()
+                if g == "M":
+                    gender_val = "男"
+                elif g == "F":
+                    gender_val = "女"
+                else:
+                    gender_val = str(raw_gender)
 
         student_profile = {
             "studentId": str(correlation_body.studentId),
             "name": srow[1] if srow else "-",
+            "gender": gender_val,
             "college": srow[2] if srow else "-",
             "major": srow[3] if srow else "-",
             "className": srow[4] if srow else "-",
@@ -614,13 +1541,30 @@ def analysis_correlation(correlation_body:CorrelationBody):
             "gpa": gpa_val,
             "dailyAvg": daily_avg_val,
             "monthlyAvg": monthly_avg_val,
+            "monthAvgCount": round(avg_month_count, 2),
+            "monthAvgAmount": round(avg_month_amount, 2),
+            "monthTotalAmount": round(avg_month_total, 2),
+            "peakPeriod": peak_period,
+            "stability": stability.get("stabilityText"),
+            "stabilityVolatility": stability.get("volatility"),
+            "isRegular": stability.get("isRegular"),
+            "singleMax": round(max_amount, 2),
+            "singleMin": round(min_amount, 2),
+            "favoriteWindow": favorite_window,
+            "consumptionType": classify_group(daily_avg_val),
             "consumptionGroup": classify_group(daily_avg_val)
+        }
+        student_point = {
+            "dailyAvg": round(float(daily_avg_val or 0.0), 2),
+            "gpa": round(float(gpa_val or 0.0), 2),
+            "studentId": str(correlation_body.studentId)
         }
 
     return {
         "scatterData": scatter_data,
         "correlationResults": results,
         "studentProfile": student_profile,
+        "studentPoint": student_point,
         "meta": {
             "consumptionCount": int(len(summary_df)),
             "gpaCount": int(len(gpa_df)),

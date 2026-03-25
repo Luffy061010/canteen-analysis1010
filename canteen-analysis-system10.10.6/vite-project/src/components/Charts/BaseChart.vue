@@ -30,6 +30,11 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
+  // 加载超时时间(ms)，超时后自动隐藏加载动画避免界面长期卡住
+  loadingTimeout: {
+    type: Number,
+    default: 20000
+  },
   // 加载动画文本
   loadingText: {
     type: String,
@@ -51,6 +56,24 @@ const emit = defineEmits(['chart-ready', 'chart-click', 'chart-resize'])
 
 const chartContainer = ref(null)
 let chartInstance = null
+let loadingTimer = null
+
+const clearLoadingTimer = () => {
+  if (loadingTimer) {
+    clearTimeout(loadingTimer)
+    loadingTimer = null
+  }
+}
+
+const startLoadingTimer = () => {
+  clearLoadingTimer()
+  if (!props.loadingTimeout || props.loadingTimeout <= 0) return
+  loadingTimer = setTimeout(() => {
+    if (chartInstance) {
+      chartInstance.hideLoading()
+    }
+  }, props.loadingTimeout)
+}
 
 // 初始化图表
 const initChart = () => {
@@ -75,8 +98,10 @@ const initChart = () => {
       textColor: '#303133',
       maskColor: 'rgba(255, 255, 255, 0.8)'
     })
+    startLoadingTimer()
   } else {
     chartInstance.hideLoading()
+    clearLoadingTimer()
   }
 
   // 绑定事件
@@ -104,8 +129,10 @@ const updateChart = () => {
 
   if (props.loading) {
     chartInstance.showLoading()
+    startLoadingTimer()
   } else {
     chartInstance.hideLoading()
+    clearLoadingTimer()
   }
 }
 
@@ -119,6 +146,7 @@ const handleResize = () => {
 
 // 销毁图表
 const destroyChart = () => {
+  clearLoadingTimer()
   if (chartInstance) {
     chartInstance.dispose()
     chartInstance = null
@@ -153,8 +181,10 @@ watch(() => props.loading, (newLoading) => {
   if (chartInstance) {
     if (newLoading) {
       chartInstance.showLoading()
+      startLoadingTimer()
     } else {
       chartInstance.hideLoading()
+      clearLoadingTimer()
     }
   }
 })

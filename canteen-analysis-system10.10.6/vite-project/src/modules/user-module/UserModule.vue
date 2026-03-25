@@ -6,11 +6,11 @@
       </template>
 
       <el-tabs v-model="activeTab">
-        <el-tab-pane label="消费查询" name="query">
+        <el-tab-pane label="个人消费查询" name="query">
           <user-consumption-query />
         </el-tab-pane>
-        <el-tab-pane label="近期变化" name="recent">
-          <user-recent-changes />
+        <el-tab-pane label="个人用户画像" name="portrait">
+          <user-portrait />
         </el-tab-pane>
       </el-tabs>
     </el-card>
@@ -20,7 +20,7 @@
 <script setup>
 import { ref } from 'vue'
 import UserConsumptionQuery from './UserConsumptionQuery.vue'
-import UserRecentChanges from './UserRecentChanges.vue'
+import UserPortrait from './UserPortrait.vue'
 
 const activeTab = ref('query')
 </script>

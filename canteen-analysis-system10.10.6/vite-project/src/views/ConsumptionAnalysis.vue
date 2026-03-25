@@ -3,18 +3,15 @@
   <div class="consumption-analysis">
     <div class="page-header">
       <h2>消费数据分析</h2>
-      <p class="page-description">基于学生消费数据的深度分析与贫困生识别</p>
+      <p class="page-description">基于校园餐饮消费数据流的深度分析</p>
     </div>
     
     <div class="analysis-tabs">
       <el-tabs v-model="activeTab" type="card" @tab-click="handleTabClick">
-        <el-tab-pane label="消费数据统计" name="data-query">
-          <router-view />
-        </el-tab-pane>
         <el-tab-pane label="概念漂移检测" name="drift-detection">
           <router-view />
         </el-tab-pane>
-        <el-tab-pane label="贫困生识别" name="poverty-identification">
+        <el-tab-pane label="用户画像构建" name="user-portrait-analysis">
           <router-view />
         </el-tab-pane>
         <el-tab-pane label="成绩关联性分析" name="score-correlation">
@@ -31,24 +28,22 @@ import { useRoute, useRouter } from 'vue-router'
 
 const route = useRoute()
 const router = useRouter()
-const activeTab = ref('data-query')
+const activeTab = ref('drift-detection')
 
 // 监听路由变化更新激活的标签
 watch(() => route.name, (newName) => {
   const tabMap = {
-    'ConsumptionDataQuery': 'data-query',
     'ConsumptionDrift': 'drift-detection',
-    'PovertyIdentification': 'poverty-identification',
+    'UserPortraitAnalysis': 'user-portrait-analysis',
     'ScoreCorrelation': 'score-correlation'
   }
-  activeTab.value = tabMap[newName] || 'data-query'
+  activeTab.value = tabMap[newName] || 'drift-detection'
 }, { immediate: true })
 
 const handleTabClick = (tab) => {
   const routeMap = {
-    'data-query': '/consumption-analysis/data-query',
     'drift-detection': '/consumption-analysis/drift-detection',
-    'poverty-identification': '/consumption-analysis/poverty-identification',
+    'user-portrait-analysis': '/consumption-analysis/user-portrait-analysis',
     'score-correlation': '/consumption-analysis/score-correlation'
   }
   router.push(routeMap[tab.paneName])

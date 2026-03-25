@@ -13,7 +13,7 @@ const routes = [
         path: '/',
         name: 'Dashboard',
         component: () => import('../views/Dashboard.vue'),
-        meta: { title: '系统总览' }
+        meta: { title: '首页' }
     },
     {
         path: '/users',
@@ -40,22 +40,34 @@ const routes = [
         meta: { title: '消费信息查询' }
     },
     {
+        path: '/consumption-statistics',
+        name: 'ConsumptionStatistics',
+        component: () => import('../views/analysis/ConsumptionDataQuery.vue'),
+        meta: { title: '消费数据统计' }
+    },
+    {
         path: '/user',
         name: 'UserHome',
-        component: () => import('../views/UserHome.vue'),
+        component: () => import('../modules/user-module/UserModule.vue'),
         meta: { title: '个人中心' }
     },
     {
         path: '/user-consumption',
         name: 'UserConsumptionQuery',
         component: () => import('../modules/user-module/UserConsumptionQuery.vue'),
-        meta: { title: '我的消费记录' }
+        meta: { title: '个人消费查询' }
+    },
+    {
+        path: '/user-portrait',
+        name: 'UserPortrait',
+        component: () => import('../modules/user-module/UserPortrait.vue'),
+        meta: { title: '个人用户画像' }
     },
     {
         path: '/user-recent-changes',
         name: 'UserRecentChanges',
-        component: () => import('../modules/user-module/UserRecentChanges.vue'),
-        meta: { title: '近期消费变化' }
+        component: () => import('../modules/user-module/UserConsumptionQuery.vue'),
+        meta: { title: '个人消费查询' }
     },
     {
         path: '/system',
@@ -67,15 +79,9 @@ const routes = [
         path: '/consumption-analysis',
         name: 'ConsumptionAnalysis',
         component: () => import('../views/ConsumptionAnalysis.vue'),
-        redirect: '/consumption-analysis/data-query',
+        redirect: '/consumption-analysis/drift-detection',
         meta: { title: '消费数据分析' },
         children: [
-            {
-                path: 'data-query',
-                name: 'ConsumptionDataQuery',
-                component: () => import('../views/analysis/ConsumptionDataQuery.vue'),
-                meta: { title: '消费数据统计' }
-            },
             {
                 path: 'drift-detection',
                 name: 'ConsumptionDrift',
@@ -83,10 +89,10 @@ const routes = [
                 meta: { title: '消费概念漂移检测' }
             },
             {
-                path: 'poverty-identification',
-                name: 'PovertyIdentification',
+                path: 'user-portrait-analysis',
+                name: 'UserPortraitAnalysis',
                 component: () => import('../views/analysis/PovertyIdentification.vue'),
-                meta: { title: '贫困生鉴别' }
+                meta: { title: '用户画像模块' }
             },
             {
                 path: 'score-correlation',
@@ -107,7 +113,7 @@ const router = createRouter({
 // 路由守卫 - 权限验证和页面标题设置
 router.beforeEach((to, from, next) => {
     if (to.meta && to.meta.title) {
-        document.title = `${to.meta.title} - 贫困生鉴别系统`
+        document.title = `${to.meta.title} - 用户消费分析系统 V1.0`
     }
 
     const token = getAuthToken()

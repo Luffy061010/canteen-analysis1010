@@ -1,616 +1,1011 @@
 <template>
-  <!-- 页面：消费概念漂移检测 -->
   <div class="consumption-drift">
     <el-card>
       <template #header>
         <span>概念漂移检测</span>
       </template>
 
-      <!-- 筛选条件 -->
-      <el-form :model="queryForm" ref="queryForm" label-width="100px">
-        <el-row :gutter="20">
-          <el-col :span="6">
-            <el-form-item label="学院">
-              <el-select v-model="queryForm.college" placeholder="全部学院" style="width: 100%">
-                <el-option label="全部" value=""></el-option>
-                <el-option v-for="college in colleges" :key="college" :label="college" :value="college"></el-option>
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="6">
-            <el-form-item label="专业">
-              <el-select v-model="queryForm.major" placeholder="全部专业" style="width: 100%">
-                <el-option label="全部" value=""></el-option>
-                <el-option v-for="major in majors" :key="major" :label="major" :value="major"></el-option>
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="6">
-            <el-form-item label="年级">
-              <el-select v-model="queryForm.grade" placeholder="全部年级" style="width: 100%">
-                <el-option label="全部" value=""></el-option>
-                <el-option v-for="grade in grades" :key="grade" :label="grade" :value="grade"></el-option>
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="6">
-            <el-form-item label="班级">
-              <el-select v-model="queryForm.class" placeholder="全部班级" style="width: 100%">
-                <el-option label="全部" value=""></el-option>
-                <el-option v-for="cls in classes" :key="cls" :label="cls" :value="cls"></el-option>
-              </el-select>
-            </el-form-item>
-          </el-col>
-        </el-row>
+      <el-radio-group v-model="mode" size="large" style="margin-bottom: 16px;">
+        <el-radio-button label="interval">时序间隔式概念漂移检测</el-radio-button>
+        <el-radio-button label="period-compare">双时段对比式漂移检测</el-radio-button>
+      </el-radio-group>
 
-        <el-row :gutter="20">
-          <el-col :span="6">
-            <el-form-item label="时间窗口">
-              <el-select v-model="queryForm.timeWindow" placeholder="请选择时间窗口" style="width: 100%">
-                <el-option label="7天" value="7"></el-option>
-                <el-option label="15天" value="15"></el-option>
-                <el-option label="30天" value="30"></el-option>
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="6">
-            <el-form-item label="日期范围">
-              <el-date-picker
-                  v-model="queryForm.dateRange"
+      <template v-if="mode === 'interval'">
+        <el-form :model="intervalForm" label-width="120px">
+          <el-row :gutter="20">
+            <el-col :span="6">
+              <el-form-item label="学院">
+                <el-select v-model="intervalForm.college" placeholder="全部学院" style="width: 100%">
+                  <el-option label="全部" value="" />
+                  <el-option v-for="college in colleges" :key="college" :label="college" :value="college" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="6">
+              <el-form-item label="专业">
+                <el-select v-model="intervalForm.major" placeholder="全部专业" style="width: 100%">
+                  <el-option label="全部" value="" />
+                  <el-option v-for="major in majors" :key="major" :label="major" :value="major" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="6">
+              <el-form-item label="年级">
+                <el-select v-model="intervalForm.grade" placeholder="全部年级" style="width: 100%">
+                  <el-option label="全部" value="" />
+                  <el-option v-for="grade in grades" :key="grade" :label="grade" :value="grade" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="6">
+              <el-form-item label="班级">
+                <el-select v-model="intervalForm.class" placeholder="全部班级" style="width: 100%">
+                  <el-option label="全部" value="" />
+                  <el-option v-for="cls in classes" :key="cls" :label="cls" :value="cls" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+          </el-row>
+          <el-row :gutter="20">
+            <el-col :span="8">
+              <el-form-item label="日期范围">
+                <el-date-picker
+                  v-model="intervalForm.dateRange"
                   type="daterange"
+                  value-format="YYYY-MM-DD"
                   range-separator="至"
                   start-placeholder="开始日期"
                   end-placeholder="结束日期"
-                  value-format="YYYY-MM-DD"
                   style="width: 100%"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="6">
-            <el-form-item label="学号">
-              <el-input v-model="queryForm.studentId" placeholder="请输入学号" style="width: 100%"></el-input>
-            </el-form-item>
-          </el-col>
-          <el-col :span="6">
-            <el-form-item label="判定阈值">
-              <el-select v-model="queryForm.pThreshold" placeholder="请选择阈值" style="width: 100%">
-                <el-option label="0.01" :value="0.01"></el-option>
-                <el-option label="0.02" :value="0.02"></el-option>
-                <el-option label="0.03" :value="0.03"></el-option>
-                <el-option label="0.04" :value="0.04"></el-option>
-                <el-option label="0.05" :value="0.05"></el-option>
-                <el-option label="0.06" :value="0.06"></el-option>
-                <el-option label="0.07" :value="0.07"></el-option>
-                <el-option label="0.08" :value="0.08"></el-option>
-                <el-option label="0.09" :value="0.09"></el-option>
-                <el-option label="0.10" :value="0.10"></el-option>
-              </el-select>
-            </el-form-item>
-          </el-col>
-        </el-row>
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :span="4">
+              <el-form-item label="时间窗口">
+                <el-select v-model="intervalForm.timeWindow">
+                  <el-option label="7天" :value="7" />
+                  <el-option label="14天" :value="14" />
+                  <el-option label="30天" :value="30" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="4">
+              <el-form-item label="判定阈值">
+                <el-select v-model="intervalForm.pThreshold">
+                  <el-option label="0.01" :value="0.01" />
+                  <el-option label="0.03" :value="0.03" />
+                  <el-option label="0.05" :value="0.05" />
+                  <el-option label="0.08" :value="0.08" />
+                  <el-option label="0.10" :value="0.1" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="4">
+              <el-form-item label="学号">
+                <el-input v-model="intervalForm.studentId" placeholder="可选" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="8">
+              <el-form-item>
+                <el-button type="primary" :loading="loading" @click="detectIntervalDrift">检测</el-button>
+                <el-button :disabled="loading" @click="resetInterval">重置</el-button>
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </el-form>
+
+        <el-card style="margin-top: 12px;">
+          <template #header>
+            <span>时序漂移曲线</span>
+          </template>
+          <div id="intervalDriftChart" class="drift-chart"></div>
+        </el-card>
+
+        <el-alert
+          style="margin-top: 12px;"
+          type="info"
+          :closable="false"
+          :title="`检测窗口数 ${intervalSummary.windows}，触发漂移 ${intervalSummary.driftCount} 次，漂移占比 ${intervalSummary.ratio}%`"
+        />
+      </template>
+
+      <template v-else>
+        <el-form :model="periodForm" label-width="120px">
+          <el-row :gutter="20">
+            <el-col :span="8">
+              <el-form-item label="对比时段A">
+                <el-date-picker
+                  v-model="periodForm.periodA"
+                  type="daterange"
+                  value-format="YYYY-MM-DD"
+                  range-separator="至"
+                  start-placeholder="开始日期"
+                  end-placeholder="结束日期"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :span="8">
+              <el-form-item label="对比时段B">
+                <el-date-picker
+                  v-model="periodForm.periodB"
+                  type="daterange"
+                  value-format="YYYY-MM-DD"
+                  range-separator="至"
+                  start-placeholder="开始日期"
+                  end-placeholder="结束日期"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :span="8">
+              <el-form-item label="检测算法">
+                <el-input value="MinMax + KMeans（自适应K）" disabled />
+              </el-form-item>
+            </el-col>
+          </el-row>
+
+          <el-row :gutter="20">
+            <el-col :span="8">
+              <el-form-item>
+                <el-button type="primary" :loading="loading" @click="detectPeriodDrift">对比检测</el-button>
+                <el-button :disabled="loading" @click="resetPeriod">重置</el-button>
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </el-form>
+
         <el-row :gutter="20">
-          <el-col :span="24">
-            <el-form-item>
-              <el-button type="primary" @click="handleQuery">检测</el-button>
-              <el-button @click="handleReset">重置</el-button>
-            </el-form-item>
+          <el-col :span="6">
+            <el-card>
+              <div class="metric-title">时段A均值</div>
+              <div class="metric-value">¥{{ periodSummary.meanA }}</div>
+            </el-card>
+          </el-col>
+          <el-col :span="6">
+            <el-card>
+              <div class="metric-title">时段B均值</div>
+              <div class="metric-value">¥{{ periodSummary.meanB }}</div>
+            </el-card>
+          </el-col>
+          <el-col :span="6">
+            <el-card>
+              <div class="metric-title">漂移指数</div>
+              <div class="metric-value">{{ periodSummary.driftIndex }}%</div>
+            </el-card>
+          </el-col>
+          <el-col :span="6">
+            <el-card>
+              <div class="metric-title">漂移等级</div>
+              <div class="metric-value">{{ periodSummary.levelText }}</div>
+            </el-card>
           </el-col>
         </el-row>
-      </el-form>
 
-      <!-- 消费概念漂移检测图表 -->
-      <el-card style="margin-top: 20px;">
-        <template #header>
-          <span>概念漂移检测分析</span>
-        </template>
-        <div id="driftChart" ref="driftChart" class="drift-chart"></div>
-      </el-card>
+        <el-row :gutter="20" style="margin-top: 12px;">
+          <el-col :span="8">
+            <el-card>
+              <div class="metric-title">自适应聚类数 K</div>
+              <div class="metric-value">{{ periodSummary.adaptiveK }}</div>
+            </el-card>
+          </el-col>
+          <el-col :span="8">
+            <el-card>
+              <div class="metric-title">簇占比漂移 (Cluster PSI)</div>
+              <div class="metric-value">{{ periodSummary.psi }}</div>
+            </el-card>
+          </el-col>
+          <el-col :span="8">
+            <el-card>
+              <div class="metric-title">簇中心位移</div>
+              <div class="metric-value">{{ periodSummary.centerShift }}</div>
+            </el-card>
+          </el-col>
+        </el-row>
 
-      <!-- 检测结果 -->
-      <el-card style="margin-top: 20px;">
-        <template #header>
-          <span>概念漂移检测结果</span>
-        </template>
-        <el-table
-            :data="pagedDriftResults"
-            style="width: 100%"
-            :empty-text="'暂无数据（后端未返回漂移结果）'"
-        >
-          <el-table-column prop="studentId" label="学号" width="120"></el-table-column>
-          <el-table-column prop="name" label="姓名" width="100"></el-table-column>
-          <el-table-column prop="college" label="学院" width="120"></el-table-column>
-          <el-table-column prop="beforeDrift" label="漂移前均值" width="100">
-            <template #default="scope">¥{{ scope.row.beforeDrift }}</template>
-          </el-table-column>
-          <el-table-column prop="afterDrift" label="漂移后均值" width="100">
-            <template #default="scope">¥{{ scope.row.afterDrift }}</template>
-          </el-table-column>
-          <el-table-column prop="changeRate" label="变化率" width="100">
-            <template #default="scope">
-              <el-tag :type="scope.row.changeRate > 0 ? 'danger' : 'success'">
-                {{ scope.row.changeRate > 0 ? '+' : '' }}{{ scope.row.changeRate }}%
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="detectDate" label="检测日期" width="120"></el-table-column>
-        </el-table>
-        <div class="pagination" style="margin-top: 12px; text-align: right;">
-          <el-pagination
-              v-model:current-page="resultPagination.currentPage"
-              v-model:page-size="resultPagination.pageSize"
-              :page-sizes="[20, 50, 100]"
-              :total="resultPagination.total"
-              layout="total, sizes, prev, pager, next, jumper"
-              @size-change="handleResultSizeChange"
-              @current-change="handleResultPageChange"
-          />
-        </div>
-      </el-card>
+        <el-card style="margin-top: 12px;">
+          <template #header>
+            <span>双时段分布对比（金额分布 + 小时分布）</span>
+          </template>
+          <div id="periodDriftChart" class="drift-chart"></div>
+        </el-card>
+
+        <el-alert
+          style="margin-top: 12px;"
+          type="info"
+          :closable="false"
+          :title="periodPrincipleText"
+        />
+      </template>
     </el-card>
   </div>
 </template>
 
 <script>
-import {getConsumptionDrift} from "@/api/user.js";
-import {COLLEGES_MAJORS, generateClassNames} from '@/utils/const_value.js'
-import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
+import { ElMessage } from 'element-plus'
+import { getConsumptionData, getConsumptionDrift } from '@/api/user.js'
+import { COLLEGES_MAJORS, generateClassNames } from '@/utils/const_value.js'
 
 export default {
   name: 'ConsumptionDrift',
-  components: {},
   data() {
     return {
-      queryForm: {
-        college: '',
-        major: '',
-        grade: '',
-        class: '',
-        timeWindow: '7',
-        pThreshold: 0.05,
-        driftMethod: 'ElKmeans',
-        studentId: '',
-        timeBegin: '',
-        timeEnd: '',
-        dateRange: []
-      },
+      mode: 'interval',
+      loading: false,
       colleges: Object.keys(COLLEGES_MAJORS),
       majors: [],
       grades: ['2021', '2022', '2023', '2024'],
       classes: [],
-      loading: false,
-      driftResults: [],
-      driftChartData: {
-        dates: [],
-        actual: [],
-        trend: [],
-        driftPoints: []
+      intervalForm: {
+        college: '',
+        major: '',
+        grade: '',
+        class: '',
+        studentId: '',
+        dateRange: [],
+        timeWindow: 7,
+        pThreshold: 0.05
       },
-      resultPagination: {
-        currentPage: 1,
-        pageSize: 20,
-        total: 0
+      periodForm: {
+        periodA: [],
+        periodB: []
       },
-      charts: {},
-      resizeHandler: null,
-      chartMode: 'pvalue' // consumption | pvalue
+      intervalSummary: {
+        windows: 0,
+        driftCount: 0,
+        ratio: 0
+      },
+      periodSummary: {
+        meanA: 0,
+        meanB: 0,
+        driftIndex: 0,
+        levelText: '稳定',
+        psi: 0,
+        centerShift: 0,
+        adaptiveK: 0,
+        sampleA: 0,
+        sampleB: 0
+      },
+      charts: {
+        interval: null,
+        period: null
+      },
+      resizeHandler: null
     }
   },
   mounted() {
-    this.handleQuery()
+    this.detectIntervalDrift()
+    this.resizeHandler = () => {
+      Object.values(this.charts).forEach((c) => c && c.resize && c.resize())
+    }
+    window.addEventListener('resize', this.resizeHandler)
+  },
+  beforeUnmount() {
+    window.removeEventListener('resize', this.resizeHandler)
+    Object.values(this.charts).forEach((c) => c && c.dispose && c.dispose())
   },
   watch: {
-    'queryForm.college'(newVal) {
+    'intervalForm.college'(newVal) {
       if (newVal && COLLEGES_MAJORS[newVal]) {
         this.majors = COLLEGES_MAJORS[newVal].majors || []
       } else {
         this.majors = []
       }
-      this.queryForm.major = ''
-      this.queryForm.class = ''
+      this.intervalForm.major = ''
+      this.intervalForm.class = ''
       this.classes = []
     },
-    'queryForm.major'(newVal) {
-      if (newVal && this.queryForm.grade) {
-        this.classes = generateClassNames(newVal, this.queryForm.grade + '级')
+    'intervalForm.major'(newVal) {
+      if (newVal && this.intervalForm.grade) {
+        this.classes = generateClassNames(newVal, this.intervalForm.grade + '级')
       } else {
         this.classes = []
       }
-      this.queryForm.class = ''
+      this.intervalForm.class = ''
     },
-    'queryForm.grade'(newVal) {
-      if (newVal && this.queryForm.major) {
-        this.classes = generateClassNames(this.queryForm.major, newVal + '级')
+    'intervalForm.grade'(newVal) {
+      if (newVal && this.intervalForm.major) {
+        this.classes = generateClassNames(this.intervalForm.major, newVal + '级')
       } else {
         this.classes = []
       }
-      this.queryForm.class = ''
-    }
-  },
-  computed: {
-    pagedDriftResults() {
-      const start = (this.resultPagination.currentPage - 1) * this.resultPagination.pageSize
-      const end = start + this.resultPagination.pageSize
-      return this.driftResults.slice(start, end)
+      this.intervalForm.class = ''
     }
   },
   methods: {
-    async handleQuery() {
-      const windowDays = Number(this.queryForm.timeWindow || 7)
-      if (!this.queryForm.dateRange || this.queryForm.dateRange.length !== 2) {
-        ElMessage.warning('请选择日期范围')
-        return
+    clamp(v, min, max) {
+      return Math.min(max, Math.max(min, v))
+    },
+
+    mean(arr) {
+      if (!arr.length) return 0
+      return arr.reduce((s, v) => s + v, 0) / arr.length
+    },
+
+    std(arr) {
+      if (!arr.length) return 0
+      const m = this.mean(arr)
+      const variance = arr.reduce((s, v) => s + (v - m) * (v - m), 0) / arr.length
+      return Math.sqrt(variance)
+    },
+
+    parseAmountRows(rows) {
+      const list = Array.isArray(rows) ? rows : []
+      return list
+        .map(i => Number(i.amount || i.money || 0))
+        .filter(v => !Number.isNaN(v))
+    },
+
+    parseConsumptionRows(rows) {
+      const list = Array.isArray(rows) ? rows : []
+      return list
+        .map((i) => {
+          const amount = Number(i.amount || i.money || 0)
+          const timeRaw = i.consumptionTime || i.consumption_time || i.consume_time || i.consumeTime || ''
+          const dt = new Date(String(timeRaw).replace(' ', 'T'))
+          const hour = Number.isNaN(dt.getTime()) ? null : dt.getHours()
+          const meal = i.mealType || i.meal_type || '未知'
+          return {
+            amount: Number.isNaN(amount) ? 0 : amount,
+            hour,
+            meal
+          }
+        })
+        .filter(i => i.amount >= 0)
+    },
+
+    extractRows(res) {
+      const rows = res?.records || res?.data?.records || res?.data || []
+      return Array.isArray(rows) ? rows : []
+    },
+
+    extractTotal(res, fallback = 0) {
+      const n = Number(res?.total || res?.totalCount || res?.data?.total || fallback || 0)
+      return Number.isNaN(n) ? fallback : n
+    },
+
+    async fetchAllConsumptionByParams(params) {
+      const pageSize = 2000
+      const maxPages = 80
+      let page = 1
+      let allRows = []
+      let total = 0
+
+      while (page <= maxPages) {
+        const res = await getConsumptionData({ ...params, page, pageSize })
+        const rows = this.extractRows(res)
+        if (!rows.length) break
+        allRows = allRows.concat(rows)
+        total = this.extractTotal(res, allRows.length)
+
+        if (allRows.length >= total) break
+        if (rows.length < pageSize) break
+        page += 1
       }
-      const [start, end] = this.queryForm.dateRange
-      const diff = Math.floor((new Date(end) - new Date(start)) / (24 * 60 * 60 * 1000)) + 1
-      if (diff < windowDays * 2) {
-        ElMessage.warning(`日期跨度需不少于 ${windowDays * 2} 天，以形成对比区间`)
+
+      return allRows
+    },
+
+    normalizeDist(arr) {
+      const sum = arr.reduce((s, v) => s + v, 0)
+      if (!sum) return arr.map(() => 0)
+      return arr.map(v => v / sum)
+    },
+
+    klDivergence(p, q) {
+      const eps = 1e-10
+      let s = 0
+      for (let i = 0; i < p.length; i += 1) {
+        const pi = Math.max(eps, Number(p[i] || 0))
+        const qi = Math.max(eps, Number(q[i] || 0))
+        s += pi * Math.log(pi / qi)
+      }
+      return s
+    },
+
+    jsDivergence(p, q) {
+      const m = p.map((v, i) => (Number(v || 0) + Number(q[i] || 0)) / 2)
+      return 0.5 * this.klDivergence(p, m) + 0.5 * this.klDivergence(q, m)
+    },
+
+    psiIndex(p, q) {
+      const eps = 1e-10
+      let s = 0
+      for (let i = 0; i < p.length; i += 1) {
+        const pi = Math.max(eps, Number(p[i] || 0))
+        const qi = Math.max(eps, Number(q[i] || 0))
+        s += (pi - qi) * Math.log(pi / qi)
+      }
+      return s
+    },
+
+    buildHistogram(values, minVal, maxVal, binCount = 12) {
+      const bins = new Array(binCount).fill(0)
+      if (!values.length) {
+        return { bins, labels: Array.from({ length: binCount }, (_, i) => `区间${i + 1}`) }
+      }
+
+      const step = maxVal === minVal ? 1 : (maxVal - minVal) / binCount
+      values.forEach((v) => {
+        const rawIdx = step === 0 ? 0 : Math.floor((v - minVal) / step)
+        const idx = this.clamp(rawIdx, 0, binCount - 1)
+        bins[idx] += 1
+      })
+
+      const labels = Array.from({ length: binCount }, (_, i) => {
+        const l = minVal + i * step
+        const r = i === binCount - 1 ? maxVal : minVal + (i + 1) * step
+        return `${l.toFixed(1)}-${r.toFixed(1)}`
+      })
+
+      return { bins, labels }
+    },
+
+    buildHourDist(rows) {
+      const counts = new Array(24).fill(0)
+      rows.forEach((r) => {
+        if (r.hour === null || r.hour === undefined) return
+        counts[r.hour] += 1
+      })
+      return counts
+    },
+
+    buildMealDist(rows) {
+      const map = { 早餐: 0, 午餐: 0, 晚餐: 0, 夜宵: 0, 其他: 0 }
+      rows.forEach((r) => {
+        const m = String(r.meal || '')
+        if (m.includes('早')) map.早餐 += 1
+        else if (m.includes('中') || m.includes('午')) map.午餐 += 1
+        else if (m.includes('晚')) map.晚餐 += 1
+        else if (m.includes('夜')) map.夜宵 += 1
+        else map.其他 += 1
+      })
+      return [map.早餐, map.午餐, map.晚餐, map.夜宵, map.其他]
+    },
+
+    buildFeaturePoints(rows) {
+      return rows.map((r) => [
+        Number(r.amount || 0),
+        Number(r.hour === null || r.hour === undefined ? 12 : r.hour)
+      ])
+    },
+
+    fitMinMax(points) {
+      const dims = points[0]?.length || 0
+      const minVals = new Array(dims).fill(Number.POSITIVE_INFINITY)
+      const maxVals = new Array(dims).fill(Number.NEGATIVE_INFINITY)
+
+      points.forEach((p) => {
+        for (let i = 0; i < dims; i += 1) {
+          minVals[i] = Math.min(minVals[i], Number(p[i] || 0))
+          maxVals[i] = Math.max(maxVals[i], Number(p[i] || 0))
+        }
+      })
+
+      return { minVals, maxVals }
+    },
+
+    transformMinMax(points, scaler) {
+      const { minVals, maxVals } = scaler
+      return points.map((p) => p.map((v, i) => {
+        const minV = minVals[i]
+        const maxV = maxVals[i]
+        if (maxV === minV) return 0
+        return (Number(v || 0) - minV) / (maxV - minV)
+      }))
+    },
+
+    distance2d(a, b) {
+      const dx = Number(a[0] || 0) - Number(b[0] || 0)
+      const dy = Number(a[1] || 0) - Number(b[1] || 0)
+      return Math.sqrt(dx * dx + dy * dy)
+    },
+
+    assignKMeansLabels(data, centers) {
+      return data.map((point) => {
+        let bestIdx = 0
+        let bestDist = Number.POSITIVE_INFINITY
+        centers.forEach((c, idx) => {
+          const d = this.distance2d(point, c)
+          if (d < bestDist) {
+            bestDist = d
+            bestIdx = idx
+          }
+        })
+        return bestIdx
+      })
+    },
+
+    runKMeans(data, k, maxIter = 50) {
+      if (!data.length) return { centers: [], labels: [] }
+
+      const n = data.length
+      const actualK = this.clamp(Number(k || 4), 1, Math.max(1, Math.min(8, n)))
+
+      const sortedIdx = data
+        .map((p, i) => ({ i, v: Number(p[0] || 0) + Number(p[1] || 0) }))
+        .sort((a, b) => a.v - b.v)
+        .map(i => i.i)
+
+      let centers = Array.from({ length: actualK }, (_, idx) => {
+        const pick = sortedIdx[Math.floor(idx * (n - 1) / Math.max(1, actualK - 1))]
+        return [...data[pick]]
+      })
+
+      let labels = this.assignKMeansLabels(data, centers)
+
+      for (let iter = 0; iter < maxIter; iter += 1) {
+        const bucket = Array.from({ length: actualK }, () => ({ sx: 0, sy: 0, c: 0 }))
+        labels.forEach((lb, i) => {
+          bucket[lb].sx += Number(data[i][0] || 0)
+          bucket[lb].sy += Number(data[i][1] || 0)
+          bucket[lb].c += 1
+        })
+
+        const newCenters = centers.map((c, idx) => {
+          if (!bucket[idx].c) return c
+          return [bucket[idx].sx / bucket[idx].c, bucket[idx].sy / bucket[idx].c]
+        })
+
+        const shift = newCenters.reduce((s, c, i) => s + this.distance2d(c, centers[i]), 0)
+        centers = newCenters
+        labels = this.assignKMeansLabels(data, centers)
+        if (shift < 1e-6) break
+      }
+
+      return { centers, labels, k: actualK }
+    },
+
+    calcSSE(data, labels, centers) {
+      let sse = 0
+      labels.forEach((lb, i) => {
+        const d = this.distance2d(data[i], centers[lb])
+        sse += d * d
+      })
+      return sse
+    },
+
+    chooseAdaptiveK(data, minK = 2, maxK = 8) {
+      if (!data.length) return 1
+      const upper = this.clamp(maxK, minK, Math.min(8, data.length))
+      if (upper <= minK) return upper
+
+      const trials = []
+      for (let k = minK; k <= upper; k += 1) {
+        const km = this.runKMeans(data, k)
+        const sse = this.calcSSE(data, km.labels, km.centers)
+        trials.push({ k, sse })
+      }
+
+      // 肘部法：当继续增大K带来的相对收益显著下降时停止。
+      for (let i = 1; i < trials.length; i += 1) {
+        const prev = trials[i - 1]
+        const cur = trials[i]
+        const improve = prev.sse <= 0 ? 0 : (prev.sse - cur.sse) / prev.sse
+        if (improve < 0.12) {
+          return prev.k
+        }
+      }
+      return trials[trials.length - 1].k
+    },
+
+    clusterProportion(labels, k) {
+      const cnt = new Array(k).fill(0)
+      labels.forEach((lb) => { cnt[lb] += 1 })
+      return this.normalizeDist(cnt)
+    },
+
+    periodCentersByCluster(data, labels, k) {
+      const buckets = Array.from({ length: k }, () => ({ sx: 0, sy: 0, c: 0 }))
+      labels.forEach((lb, i) => {
+        buckets[lb].sx += Number(data[i][0] || 0)
+        buckets[lb].sy += Number(data[i][1] || 0)
+        buckets[lb].c += 1
+      })
+      return buckets.map((b) => (b.c ? [b.sx / b.c, b.sy / b.c] : [0, 0]))
+    },
+
+    renderPeriodClusterChart(clusterData) {
+      const chart = this.getChart('periodDriftChart', 'period')
+      if (!chart) return
+
+      const k = Number(clusterData.k || 0)
+      const xLabels = Array.from({ length: k }, (_, i) => `C${i + 1}`)
+      const pA = clusterData.pA || []
+      const pB = clusterData.pB || []
+      const centerShiftByCluster = clusterData.centerShiftByCluster || []
+
+      chart.setOption({
+        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+        legend: { top: 10, data: ['A簇占比', 'B簇占比', '簇中心位移'] },
+        grid: [
+          { left: '6%', right: '5%', top: 48, height: 145 },
+          { left: '6%', right: '5%', top: 248, height: 108 }
+        ],
+        xAxis: [
+          { type: 'category', data: xLabels, gridIndex: 0 },
+          { type: 'category', data: xLabels, gridIndex: 1 }
+        ],
+        yAxis: [
+          {
+            type: 'value',
+            name: '簇占比',
+            gridIndex: 0,
+            axisLabel: { formatter: (v) => `${Number(v * 100).toFixed(0)}%` },
+            splitLine: { lineStyle: { type: 'dashed', color: '#e7edf5' } }
+          },
+          {
+            type: 'value',
+            name: '位移距离',
+            gridIndex: 1,
+            splitLine: { lineStyle: { type: 'dashed', color: '#e7edf5' } }
+          }
+        ],
+        series: [
+          {
+            name: 'A簇占比',
+            type: 'bar',
+            xAxisIndex: 0,
+            yAxisIndex: 0,
+            data: pA,
+            barMaxWidth: 18,
+            itemStyle: { color: '#3A7AFE' }
+          },
+          {
+            name: 'B簇占比',
+            type: 'bar',
+            xAxisIndex: 0,
+            yAxisIndex: 0,
+            data: pB,
+            barMaxWidth: 18,
+            itemStyle: { color: '#F59E0B' }
+          },
+          {
+            name: '簇中心位移',
+            type: 'line',
+            smooth: true,
+            xAxisIndex: 1,
+            yAxisIndex: 1,
+            data: centerShiftByCluster,
+            lineStyle: { width: 3, color: '#EF4444' },
+            areaStyle: { color: 'rgba(239,68,68,0.10)' }
+          }
+        ]
+      })
+    },
+
+    driftLevelText(score) {
+      if (score < 20) return '稳定'
+      if (score < 40) return '轻微漂移'
+      if (score < 65) return '中等漂移'
+      return '显著漂移'
+    },
+
+    buildParams(range) {
+      if (!Array.isArray(range) || range.length !== 2) return null
+      return { timeBegin: range[0], timeEnd: range[1], page: 1, pageSize: 5000 }
+    },
+
+    getChart(id, key) {
+      const el = document.getElementById(id)
+      if (!el) return null
+      const old = echarts.getInstanceByDom(el)
+      this.charts[key] = old || echarts.init(el)
+      this.charts[key].clear()
+      return this.charts[key]
+    },
+
+    renderIntervalChart(dates, values, threshold) {
+      const chart = this.getChart('intervalDriftChart', 'interval')
+      if (!chart) return
+      chart.setOption({
+        tooltip: { trigger: 'axis' },
+        legend: { data: ['p值', '阈值'] },
+        grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+        xAxis: { type: 'category', data: dates },
+        yAxis: { type: 'value', min: 0, max: 1 },
+        series: [
+          {
+            name: 'p值',
+            type: 'line',
+            data: values,
+            smooth: true,
+            lineStyle: { width: 3, color: '#409EFF' }
+          },
+          {
+            name: '阈值',
+            type: 'line',
+            data: new Array(values.length).fill(threshold),
+            symbol: 'none',
+            lineStyle: { type: 'dashed', color: '#F56C6C' }
+          }
+        ]
+      })
+    },
+
+    renderPeriodChart(periodData) {
+      const chart = this.getChart('periodDriftChart', 'period')
+      if (!chart) return
+
+      const amountLabels = periodData.amountLabels || []
+      const densityA = periodData.amountDistA || []
+      const densityB = periodData.amountDistB || []
+      const hourDistA = periodData.hourDistA || []
+      const hourDistB = periodData.hourDistB || []
+      const diffByBin = densityA.map((v, i) => Number((Math.abs(v - (densityB[i] || 0)) * 100).toFixed(2)))
+
+      chart.setOption({
+        tooltip: {
+          trigger: 'axis',
+          axisPointer: { type: 'cross' }
+        },
+        legend: {
+          top: 8,
+          data: ['时段A金额分布', '时段B金额分布', '分布差异(%)', '时段A小时分布', '时段B小时分布']
+        },
+        grid: [
+          { left: '5%', right: '6%', top: 48, height: 130 },
+          { left: '5%', right: '6%', top: 245, height: 120 }
+        ],
+        xAxis: [
+          {
+            type: 'category',
+            data: amountLabels,
+            gridIndex: 0,
+            axisLabel: { rotate: 35, fontSize: 11 }
+          },
+          {
+            type: 'category',
+            data: Array.from({ length: 24 }, (_, i) => `${i}时`),
+            gridIndex: 1,
+            axisLabel: { interval: 1 }
+          }
+        ],
+        yAxis: [
+          {
+            type: 'value',
+            name: '金额分布占比',
+            gridIndex: 0,
+            axisLabel: { formatter: (v) => `${Number(v * 100).toFixed(0)}%` },
+            splitLine: { lineStyle: { type: 'dashed', color: '#e7edf5' } }
+          },
+          {
+            type: 'value',
+            name: '分布差异(%)',
+            gridIndex: 0,
+            axisLabel: { formatter: '{value}%' }
+          },
+          {
+            type: 'value',
+            name: '小时分布占比',
+            gridIndex: 1,
+            axisLabel: { formatter: (v) => `${Number(v * 100).toFixed(0)}%` },
+            splitLine: { lineStyle: { type: 'dashed', color: '#e7edf5' } }
+          }
+        ],
+        series: [
+          {
+            name: '时段A金额分布',
+            type: 'line',
+            smooth: true,
+            xAxisIndex: 0,
+            yAxisIndex: 0,
+            data: densityA,
+            lineStyle: { width: 3, color: '#3A7AFE' },
+            areaStyle: { color: 'rgba(58,122,254,0.12)' }
+          },
+          {
+            name: '时段B金额分布',
+            type: 'line',
+            smooth: true,
+            xAxisIndex: 0,
+            yAxisIndex: 0,
+            data: densityB,
+            lineStyle: { width: 3, color: '#F59E0B' },
+            areaStyle: { color: 'rgba(245,158,11,0.10)' }
+          },
+          {
+            name: '分布差异(%)',
+            type: 'bar',
+            xAxisIndex: 0,
+            yAxisIndex: 1,
+            data: diffByBin,
+            barMaxWidth: 14,
+            itemStyle: { color: 'rgba(239,68,68,0.45)' }
+          },
+          {
+            name: '时段A小时分布',
+            type: 'line',
+            smooth: true,
+            xAxisIndex: 1,
+            yAxisIndex: 2,
+            data: hourDistA,
+            lineStyle: { width: 2, color: '#22C55E' }
+          },
+          {
+            name: '时段B小时分布',
+            type: 'line',
+            smooth: true,
+            xAxisIndex: 1,
+            yAxisIndex: 2,
+            data: hourDistB,
+            lineStyle: { width: 2, color: '#A855F7' }
+          }
+        ]
+      })
+    },
+
+    async detectIntervalDrift() {
+      const range = this.intervalForm.dateRange
+      if (!Array.isArray(range) || range.length !== 2) {
+        ElMessage.warning('请选择日期范围')
         return
       }
 
       this.loading = true
       try {
-        // 构建查询参数
-        const params = {
-          ...this.queryForm,
-          className: this.queryForm.class || undefined,
-          grade: this.queryForm.grade || undefined,
-          timeWindow: windowDays,
-          pThreshold: Number(this.queryForm.pThreshold || 0.05)
-        }
-
-        if (this.queryForm.dateRange?.length === 2) {
-          params.timeBegin = this.queryForm.dateRange[0]
-          params.timeEnd = this.queryForm.dateRange[1]
-          params.startDate = this.queryForm.dateRange[0]
-          params.endDate = this.queryForm.dateRange[1]
-          // FastAPI 下划线风格兜底
-          params.time_begin = this.queryForm.dateRange[0]
-          params.time_end = this.queryForm.dateRange[1]
-        }
-
-        // 移除空值
-        Object.keys(params).forEach(key => {
-          if (params[key] === '' || params[key] === null || params[key] === undefined) {
-            delete params[key]
-          }
+        const result = await getConsumptionDrift({
+          college: this.intervalForm.college || undefined,
+          major: this.intervalForm.major || undefined,
+          grade: this.intervalForm.grade || undefined,
+          className: this.intervalForm.class || undefined,
+          studentId: this.intervalForm.studentId || undefined,
+          timeBegin: range[0],
+          timeEnd: range[1],
+          timeWindow: this.intervalForm.timeWindow,
+          pThreshold: this.intervalForm.pThreshold
         })
 
-        const result = await getConsumptionDrift(params)
+        const pValues = Array.isArray(result?.p_values)
+          ? result.p_values.map(v => Number(v)).filter(v => !Number.isNaN(v))
+          : []
 
-        // 处理返回数据
-        if (result?.detail) {
-          throw new Error(result.detail)
+        const driftCount = pValues.filter(v => v < this.intervalForm.pThreshold).length
+        const ratio = pValues.length ? (driftCount / pValues.length) * 100 : 0
+
+        this.intervalSummary = {
+          windows: pValues.length,
+          driftCount,
+          ratio: Number(ratio.toFixed(2))
         }
 
-        if (result) {
-          const data = result.data || result
+        const dates = Array.isArray(result?.chartData?.dates)
+          ? result.chartData.dates
+          : pValues.map((_, idx) => `窗口${idx + 1}`)
 
-          // 处理漂移检测结果
-          if (data.results && Array.isArray(data.results)) {
-            this.driftResults = data.results
-          } else if (data.driftResults && Array.isArray(data.driftResults)) {
-            this.driftResults = data.driftResults
-          } else if (Array.isArray(data)) {
-            this.driftResults = data
-          } else {
-            this.driftResults = []
-          }
-
-          this.resultPagination.total = this.driftResults.length
-          this.resultPagination.currentPage = 1
-
-          // 处理漂移图表数据
-          if (Array.isArray(data.p_values)) {
-            this.chartMode = 'pvalue'
-            const threshold = Number(data.p_threshold ?? params.pThreshold ?? this.queryForm.pThreshold ?? 0.05)
-            this.queryForm.pThreshold = threshold
-            // 后端返回 p_values 数组时，绘制 p 值曲线并标记显著点
-            const dates = (data.chartData && data.chartData.dates)
-              ? data.chartData.dates
-              : (() => {
-                const base = data.time_begin || params.timeBegin || this.queryForm.dateRange?.[0] || '1970-01-01'
-                const start = new Date(base)
-                const step = Number(data.time_window || params.timeWindow || this.queryForm.timeWindow || 7)
-                return data.p_values.map((_, idx) => {
-                  const d = new Date(start)
-                  d.setDate(d.getDate() + step * (idx + 1))
-                  return d.toISOString().slice(0, 10)
-                })
-              })()
-            const pvals = data.p_values.map(Number)
-            this.driftChartData = {
-              dates,
-              actual: pvals, // 直接展示 p 值
-              trend: [],
-              driftPoints: pvals.map(v => ({
-                value: v,
-                itemStyle: { color: v < threshold ? '#ee6666' : '#91cc75' },
-                symbolSize: v < threshold ? 12 : 6
-              }))
-            }
-          } else if (data.chartData && data.chartData.dates && data.chartData.values) {
-            this.chartMode = 'consumption'
-            this.driftChartData = {
-              dates: data.chartData.dates,
-              actual: data.chartData.values.actual || [],
-              trend: data.chartData.values.trend || [],
-              driftPoints: data.chartData.values.driftPoints || []
-            }
-          } else if (data.timeSeries && Array.isArray(data.timeSeries)) {
-            this.chartMode = 'consumption'
-            // 从时间序列数据中提取
-            this.driftChartData = {
-              dates: data.timeSeries.map(item => item.date || item.time),
-              actual: data.timeSeries.map(item => item.consumption || item.value),
-              trend: data.timeSeries.map(item => item.trend || null),
-              driftPoints: data.timeSeries.map((item) => item.isDrift ? (item.consumption || item.value) : null)
-            }
-          } else {
-            this.chartMode = 'consumption'
-            this.driftChartData = {
-              dates: [],
-              actual: [],
-              trend: [],
-              driftPoints: []
-            }
-          }
-
-          // 如果 chart 数据为空但有表格结果，使用表格结果兜底生成序列
-          if ((!this.driftChartData.dates || this.driftChartData.dates.length === 0) && this.driftResults.length) {
-            this.chartMode = 'consumption'
-            const dates = this.driftResults.map(r => r.detectDate || r.date || '')
-            const actual = this.driftResults.map(r => Number(r.afterDrift ?? r.after ?? r.value ?? 0))
-            const trend = this.driftResults.map(r => Number(r.beforeDrift ?? r.before ?? 0))
-            const driftPoints = this.driftResults.map((r, idx) => {
-              const val = Number(r.changeRate ?? 0)
-              return Math.abs(val) > 0 ? actual[idx] : null
-            })
-            this.driftChartData = { dates, actual, trend, driftPoints }
-          }
-
-          if (!this.driftChartData.dates?.length) {
-            ElMessage.info('暂无漂移检测数据，请调整筛选条件')
-          }
-          console.log('drift chart data:', this.chartMode, this.driftChartData)
-        } else {
-          this.driftResults = []
-          this.resultPagination.total = 0
-          this.driftChartData = {
-            dates: [],
-            actual: [],
-            trend: [],
-            driftPoints: []
-          }
-        }
-
-        // 初始化图表
         this.$nextTick(() => {
-          this.initDriftChart()
+          this.renderIntervalChart(dates, pValues, Number(this.intervalForm.pThreshold))
         })
       } catch (error) {
-        console.error('漂移检测失败:', error)
-        ElMessage.error('漂移检测失败: ' + (error.message || '未知错误'))
-        this.driftResults = []
-        this.resultPagination.total = 0
-        this.driftChartData = {
-          dates: [],
-          actual: [],
-          trend: [],
-          driftPoints: []
-        }
-        this.chartMode = 'consumption'
+        console.error('时序间隔式漂移检测失败:', error)
+        ElMessage.error('时序间隔式漂移检测失败')
       } finally {
         this.loading = false
       }
     },
-    handleResultPageChange(page) {
-      this.resultPagination.currentPage = page
+
+    async detectPeriodDrift() {
+      const paramsA = this.buildParams(this.periodForm.periodA)
+      const paramsB = this.buildParams(this.periodForm.periodB)
+      if (!paramsA || !paramsB) {
+        ElMessage.warning('请完整选择两个对比时段')
+        return
+      }
+
+      this.loading = true
+      try {
+        const [rowsA, rowsB] = await Promise.all([
+          this.fetchAllConsumptionByParams(paramsA),
+          this.fetchAllConsumptionByParams(paramsB)
+        ])
+
+        const parsedA = this.parseConsumptionRows(rowsA)
+        const parsedB = this.parseConsumptionRows(rowsB)
+        const valuesA = parsedA.map(i => i.amount)
+        const valuesB = parsedB.map(i => i.amount)
+
+        if (!valuesA.length || !valuesB.length) {
+          ElMessage.warning('双时段至少各需要一段有效消费数据')
+          return
+        }
+
+        const meanA = this.mean(valuesA)
+        const meanB = this.mean(valuesB)
+
+        const meanDiffRate = meanA === 0 ? 0 : Math.abs(meanB - meanA) / Math.abs(meanA)
+        const ptsA = this.buildFeaturePoints(parsedA)
+        const ptsB = this.buildFeaturePoints(parsedB)
+        const merged = ptsA.concat(ptsB)
+        const scaler = this.fitMinMax(merged)
+        const normA = this.transformMinMax(ptsA, scaler)
+        const normB = this.transformMinMax(ptsB, scaler)
+        const normAll = normA.concat(normB)
+
+        const adaptiveK = this.chooseAdaptiveK(normAll, 2, 8)
+        const km = this.runKMeans(normAll, adaptiveK)
+        const k = Number(km.k || 1)
+        const labelsA = this.assignKMeansLabels(normA, km.centers)
+        const labelsB = this.assignKMeansLabels(normB, km.centers)
+
+        const pA = this.clusterProportion(labelsA, k)
+        const pB = this.clusterProportion(labelsB, k)
+        const clusterPsi = this.psiIndex(pA, pB)
+
+        const cA = this.periodCentersByCluster(normA, labelsA, k)
+        const cB = this.periodCentersByCluster(normB, labelsB, k)
+        const centerShiftByCluster = cA.map((c, i) => Number(this.distance2d(c, cB[i]).toFixed(4)))
+        const centerShift = centerShiftByCluster.reduce((s, v) => s + v, 0) / Math.max(1, centerShiftByCluster.length)
+
+        const clusterScore = this.clamp(clusterPsi * 120, 0, 100)
+        const centerScore = this.clamp(centerShift * 100, 0, 100)
+        const meanScore = this.clamp(meanDiffRate * 100, 0, 100)
+        const driftIndex = this.clamp(clusterScore * 0.5 + centerScore * 0.3 + meanScore * 0.2, 0, 100)
+
+        this.periodSummary = {
+          meanA: Number(meanA.toFixed(2)),
+          meanB: Number(meanB.toFixed(2)),
+          driftIndex: Number(driftIndex.toFixed(2)),
+          levelText: this.driftLevelText(driftIndex),
+          psi: Number(clusterPsi.toFixed(4)),
+          centerShift: Number(centerShift.toFixed(4)),
+          adaptiveK: k,
+          sampleA: valuesA.length,
+          sampleB: valuesB.length
+        }
+
+        this.$nextTick(() => {
+          this.renderPeriodClusterChart({ k, pA, pB, centerShiftByCluster })
+        })
+      } catch (error) {
+        console.error('双时段漂移检测失败:', error)
+        ElMessage.error('双时段漂移检测失败')
+      } finally {
+        this.loading = false
+      }
     },
-    handleResultSizeChange(size) {
-      this.resultPagination.pageSize = size
-      this.resultPagination.currentPage = 1
-    },
-    handleReset() {
-      this.queryForm = {
+
+    resetInterval() {
+      this.intervalForm = {
         college: '',
         major: '',
         grade: '',
         class: '',
-        timeWindow: '7',
-        pThreshold: 0.05,
-        driftMethod: 'ElKmeans',
         studentId: '',
-        timeBegin: '',
-        timeEnd: '',
-        dateRange: []
+        dateRange: [],
+        timeWindow: 7,
+        pThreshold: 0.05
       }
       this.majors = []
       this.classes = []
-      this.driftResults = []
-      this.resultPagination = { currentPage: 1, pageSize: 20, total: 0 }
-      this.driftChartData = {
-        dates: [],
-        actual: [],
-        trend: [],
-        driftPoints: []
-      }
-      this.chartMode = 'consumption'
-
-      // 清理图表
-      if (this.resizeHandler) {
-        window.removeEventListener('resize', this.resizeHandler)
-        this.resizeHandler = null
-      }
-      Object.values(this.charts || {}).forEach(c => c?.dispose())
-      this.charts = {}
+      this.intervalSummary = { windows: 0, driftCount: 0, ratio: 0 }
+      const chart = this.charts.interval
+      if (chart) chart.clear()
     },
-    initDriftChart() {
-      const el = this.$refs.driftChart || document.getElementById('driftChart')
-      if (!el) return
-      const rect = el.getBoundingClientRect()
-      console.log('drift chart dom size:', rect.width, rect.height)
-      if (!rect.width || !rect.height) {
-        // 强制一个可见尺寸，防止父容器折叠导致看不到图
-        el.style.width = '100%'
-        el.style.minWidth = '600px'
-        el.style.height = '400px'
-        el.style.minHeight = '400px'
+
+    resetPeriod() {
+      this.periodForm = {
+        periodA: [],
+        periodB: []
       }
-      const chart = echarts.getInstanceByDom(el) || echarts.init(el)
-      chart.clear()
-      this.charts.driftChart = chart
-
-      const isPValue = this.chartMode === 'pvalue'
-        const threshold = Number(this.queryForm.pThreshold || 0.05)
-      const legendNames = isPValue
-          ? ['p值', `显著性阈值(p<${threshold})`, '检测点']
-          : ['实际消费', '趋势线', '检测点']
-
-      const dates = [...(this.driftChartData.dates || [])]
-      const actual = [...(this.driftChartData.actual || [])]
-      const trend = [...(this.driftChartData.trend || [])]
-      const driftPoints = [...(this.driftChartData.driftPoints || [])]
-
-      if (dates.length > 0) {
-        const series = []
-
-        series.push({
-          name: isPValue ? 'p值' : '实际消费',
-          type: 'line',
-          data: actual,
-          smooth: true,
-          lineStyle: {
-            color: '#5470c6',
-            width: 3
-          },
-          symbol: 'circle',
-          symbolSize: 6,
-          showSymbol: true,
-          showAllSymbol: true,
-          connectNulls: true,
-          areaStyle: isPValue ? {
-            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: 'rgba(84,112,198,0.25)' },
-              { offset: 1, color: 'rgba(84,112,198,0)' }
-            ])
-          } : undefined
-        })
-
-        if (!isPValue && trend.length) {
-          series.push({
-            name: '趋势线',
-            type: 'line',
-            data: trend,
-            smooth: true,
-            lineStyle: {
-              color: '#91cc75',
-              type: 'dashed',
-              width: 2
-            }
-          })
-        }
-
-        if (isPValue) {
-          series.push({
-            name: `显著性阈值(p<${threshold})`,
-            type: 'line',
-            data: new Array(dates.length).fill(threshold),
-            smooth: false,
-            lineStyle: { color: '#fac858', type: 'dotted', width: 1.5 },
-            symbol: 'none'
-          })
-        }
-
-        series.push({
-          name: '检测点',
-          type: 'scatter',
-          data: driftPoints,
-          symbolSize: 12,
-          itemStyle: {
-            color: '#ee6666'
-          },
-          emphasis: {
-            itemStyle: {
-              shadowBlur: 10,
-              shadowColor: 'rgba(0, 0, 0, 0.5)'
-            }
-          }
-        })
-
-        const option = {
-          tooltip: {
-            trigger: 'axis',
-            formatter: (params) => {
-              let result = params[0].name + '<br/>'
-              params.forEach(param => {
-                if (param.value !== null && param.value !== undefined) {
-                  const val = Number(param.value)
-                  const formatted = isNaN(val) ? param.value : (Math.abs(val) < 1 ? val.toFixed(4) : val.toFixed(2))
-                  result += param.seriesName + ': ' + formatted + '<br/>'
-                }
-              })
-              return result
-            }
-          },
-          legend: {
-            data: legendNames
-          },
-          grid: {
-            left: '3%',
-            right: '4%',
-            bottom: '8%',
-            containLabel: true
-          },
-          xAxis: {
-            type: 'category',
-            boundaryGap: false,
-            data: dates,
-            axisLabel: {
-              color: '#666'
-            },
-            axisLine: { lineStyle: { color: '#ccc' } }
-          },
-          yAxis: {
-            type: 'value',
-            name: isPValue ? 'p-value' : '消费金额(元)',
-            min: isPValue ? 0 : undefined,
-            max: isPValue ? 1 : undefined,
-            axisLabel: { color: '#666' },
-            splitLine: { lineStyle: { color: '#eee' } }
-          },
-          series
-        }
-        console.log('setOption option:', option)
-        chart.setOption(option, true)
-        chart.resize({
-          width: el.clientWidth || 800,
-          height: el.clientHeight || 400
-        })
-      } else {
-        chart.setOption({
-          title: {
-            text: '暂无数据',
-            left: 'center',
-            top: 'center',
-            textStyle: {
-              color: '#999',
-              fontSize: 14
-            }
-          },
-          xAxis: { show: false },
-          yAxis: { show: false },
-          series: []
-        })
+      this.periodSummary = {
+        meanA: 0,
+        meanB: 0,
+        driftIndex: 0,
+        levelText: '稳定',
+        psi: 0,
+        centerShift: 0,
+        adaptiveK: 0,
+        sampleA: 0,
+        sampleB: 0
       }
-
-      if (this.resizeHandler) {
-        window.removeEventListener('resize', this.resizeHandler)
-      }
-      this.resizeHandler = () => {
-        Object.values(this.charts || {}).forEach(c => c?.resize())
-      }
-      window.addEventListener('resize', this.resizeHandler)
+      const chart = this.charts.period
+      if (chart) chart.clear()
+    }
+  },
+  computed: {
+    periodPrincipleText() {
+      return '检测原理（固定MinMax+KMeans）：先将双时段样本特征做MinMax归一化，再通过肘部法自适应选择聚类数K并在统一空间做KMeans聚类；随后比较两时段簇占比漂移（Cluster PSI）与簇中心位移，并结合均值变化率融合为0-100漂移指数。指数越高说明行为结构变化越明显。'
     }
   }
 }
@@ -623,9 +1018,21 @@ export default {
 
 .drift-chart {
   width: 100%;
-  min-width: 600px;
-  height: 400px;
-  min-height: 400px;
+  height: 390px;
 }
 
+.metric-title {
+  color: #909399;
+}
+
+.metric-value {
+  margin-top: 8px;
+  font-size: 22px;
+  font-weight: 700;
+  color: #303133;
+}
+
+.consumption-drift :deep(.el-card) {
+  border-radius: 12px;
+}
 </style>

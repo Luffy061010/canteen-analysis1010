@@ -31,6 +31,9 @@ class ClusterBody(BaseBody):
     # 如果有集群分析的特定参数
     n_clusters: Optional[int] = Field(4, description="聚类数量", alias="n_clusters")
     clusterNums: Optional[int] = Field(None, description="聚类数量(兼容前端字段)", alias="clusterNums")
+    includeDetails: Optional[bool] = Field(False, description="是否返回详细画像字段", alias="includeDetails")
+    page: Optional[int] = Field(1, description="分页页码", alias="page")
+    pageSize: Optional[int] = Field(20, description="分页大小", alias="pageSize")
 
 
 class CorrelationBody(BaseBody):

@@ -10,7 +10,7 @@
 - 不修改项目现有代码（路由/全局 API 文件均未更改）。
 - 直接调用后端已实现的接口：
   - `/fastapi/consumption/query`（GET） - 查询个人消费明细和原始记录
-  - `/fastapi/consumption/{studentId}/recent`（GET） - 近期消费变化与分析
+  - `/fastapi/consumption/{studentId}/recent`（GET） - 个人消费趋势分析
 - 使用 `localStorage.userInfo` 取得当前学号（`username` 字段）作为 `studentId`。
 
 如何集成

@@ -5,7 +5,7 @@ import json
 import csv
 import io
 import time
-from typing import Optional
+from typing import Optional, Any
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Depends, Query, HTTPException, status, Body
 from fastapi.security import OAuth2PasswordBearer
@@ -20,13 +20,20 @@ from service import analysis_service
 from schemas.form_dto import ClusterBody, CorrelationBody, DriftBody, BaseBody
 from utils import get_data_summary
 from utils import redis_utils as r
-from typing import Optional
 from config import mysql
 import math
 import numpy as np
+from utils.llm_explainer import build_custom_explanation
 
 
 app = FastAPI()
+
+
+class ExplainBody(BaseModel):
+    scene: Optional[str] = None
+    style: Optional[str] = None
+    data: Optional[dict[str, Any]] = None
+    prompt: Optional[str] = None
 
 # 用户模型
 class User(BaseModel):
@@ -725,13 +732,47 @@ app.add_middleware(
 def analysis_cluster(cluster_body: ClusterBody = Depends()):
     print(cluster_body)
     # 版本号防止旧缓存（字段不全）命中
-    key = "api:cluster:v3:" + cluster_body.model_dump_json()
+    key = "api:cluster:v7:" + cluster_body.model_dump_json()
     val = r.get_key(key)
     if val:
         return json.loads(val)
 
     res = analysis_service.analysis_cluster(cluster_body)
     r.set_key(key, json.dumps(res))
+    return res
+
+
+@app.get("/analysis/cluster/details")
+def analysis_cluster_details(
+    studentIds: str = Query(..., description="学号列表，逗号分隔"),
+    timeBegin: Optional[str] = Query(None, description="开始日期 YYYY-MM-DD"),
+    timeEnd: Optional[str] = Query(None, description="结束日期 YYYY-MM-DD"),
+    includeLlm: bool = Query(False, description="是否生成个体解释")
+):
+    ids = [i.strip() for i in str(studentIds or "").split(",") if i and i.strip()]
+    if not ids:
+        raise HTTPException(status_code=400, detail="studentIds 不能为空")
+
+    begin_date = None
+    end_date = None
+    try:
+        if timeBegin:
+            begin_date = datetime.strptime(timeBegin, "%Y-%m-%d").date()
+        if timeEnd:
+            end_date = datetime.strptime(timeEnd, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="timeBegin/timeEnd 日期格式错误，需 YYYY-MM-DD")
+
+    ids_raw = ",".join(ids)
+    ids_digest = hashlib.md5(ids_raw.encode("utf-8")).hexdigest()
+    cache_key = f"api:cluster:details:v2:{ids_digest}:{timeBegin or ''}:{timeEnd or ''}:{int(includeLlm)}"
+    val = r.get_key(cache_key)
+    if val:
+        return json.loads(val)
+
+    details = analysis_service.get_cluster_details(ids, begin_date, end_date, includeLlm)
+    res = {"results": details, "total": len(details)}
+    r.set_key(cache_key, json.dumps(res), ex=300)
     return res
 
 
@@ -752,7 +793,7 @@ def analysis_drift(drift_body: DriftBody = Depends()):
 @app.get("/analysis/correlation")
 def analysis_correlation(correlation_body: CorrelationBody = Depends()):
     print(correlation_body)
-    key = "api:correlation:v4:" + correlation_body.model_dump_json()
+    key = "api:correlation:v6:" + correlation_body.model_dump_json()
     val = r.get_key(key)
     if val:
         return json.loads(val)
@@ -760,6 +801,163 @@ def analysis_correlation(correlation_body: CorrelationBody = Depends()):
     res = analysis_service.analysis_correlation(correlation_body)
     r.set_key(key, json.dumps(res))
     return res
+
+
+@app.post("/analysis/explain")
+@app.post("/analysis/llm/explain")
+@app.post("/analysis/deepseek/explain")
+def analysis_explain(body: ExplainBody = Body(...)):
+    user_prompt = (body.prompt or "").strip()
+    scene = (body.scene or "通用场景").strip()
+    style = (body.style or "plain-chinese").strip()
+    data = body.data or {}
+
+    if not user_prompt:
+        raise HTTPException(status_code=400, detail="prompt 不能为空")
+
+    full_prompt = (
+        f"场景: {scene}。"
+        f"输出风格: {style}。"
+        "请严格基于给定结构化数据解释，不要臆造。"
+        f"\n数据: {json.dumps(data, ensure_ascii=False)}"
+        f"\n任务: {user_prompt}"
+    )
+
+    text = build_custom_explanation(full_prompt)
+    if text:
+        return {"text": text, "scene": scene}
+
+    # LLM 不可用时按场景降级，避免不同分析场景混用错误话术。
+    if scene == "group-portrait":
+        groups = data.get("groups", []) if isinstance(data, dict) else []
+
+        def _fmt_group(g):
+            level = g.get("level", "-")
+            ratio = g.get("ratio", 0)
+            avg_daily = g.get("avgDailyAvg", 0)
+            avg_count = g.get("avgDailyCount", 0)
+            sample_size = g.get("sampleSize", 0)
+            return (
+                f"{level}群体样本{sample_size}人，占比约{ratio}%，"
+                f"日均消费约{avg_daily}元、日均消费次数约{avg_count}次。"
+            )
+
+        text_parts = []
+        if isinstance(groups, list) and groups:
+            ordered = ["低消费", "较低消费", "中消费", "高消费"]
+            group_map = {str(i.get("level", "")): i for i in groups if isinstance(i, dict)}
+            for lv in ordered:
+                item = group_map.get(lv, {"level": lv, "sampleSize": 0, "ratio": 0, "avgDailyAvg": 0, "avgDailyCount": 0})
+                text_parts.append(_fmt_group(item))
+
+        if not text_parts:
+            text_parts = [
+                "低消费群体通常预算约束更明显，消费频次与单次金额整体较低。",
+                "较低消费群体消费节奏较为稳定，以基础就餐需求为主。",
+                "中消费群体在成本与体验之间保持平衡，结构相对均衡。",
+                "高消费群体更重视时效与偏好，单次消费与波动性通常更高。",
+            ]
+
+        fallback = (
+            "四类消费层级群体解释如下："
+            + "".join(text_parts)
+            + "上述结论仅反映群体消费行为特征，不代表任何行政认定。"
+        )
+    elif scene == "score-correlation":
+        summary = data.get("summary", {}) if isinstance(data, dict) else {}
+        top_rows = data.get("topRows", []) if isinstance(data, dict) else []
+
+        sample_size = summary.get("sampleSize", 0)
+        significant_count = summary.get("significantCount", 0)
+        main_direction = summary.get("mainDirection", "方向待定")
+        main_strength = summary.get("mainStrength", "弱")
+
+        if isinstance(top_rows, list) and top_rows:
+            top = top_rows[0] if isinstance(top_rows[0], dict) else {}
+            top_feature = top.get("feature", "关键指标")
+            top_corr = top.get("corr", "0.000")
+            top_p = top.get("pValue", "1.0000")
+            top_direction = top.get("direction", "相关方向待定")
+
+            second = top_rows[1] if len(top_rows) > 1 and isinstance(top_rows[1], dict) else {}
+            third = top_rows[2] if len(top_rows) > 2 and isinstance(top_rows[2], dict) else {}
+            extra_parts = []
+            if second:
+                extra_parts.append(
+                    f"其次是{second.get('feature', '次级指标')}（{second.get('direction', '方向待定')}，r={second.get('corr', '0.000')}）。"
+                )
+            if third:
+                extra_parts.append(
+                    f"第三是{third.get('feature', '第三指标')}（{third.get('direction', '方向待定')}，r={third.get('corr', '0.000')}）。"
+                )
+
+            fallback = (
+                f"【概览】本次分析样本量约为{sample_size}，显著相关指标{significant_count}项，整体呈现{main_direction}，强度为{main_strength}。"
+                f"【重点指标】当前最值得关注的是{top_feature}（{top_direction}，r={top_corr}，p={top_p}）。"
+                + "".join(extra_parts)
+                + "【业务解读】可将其理解为同一群体内指标的同步变化倾向，而非单个行为对成绩的直接作用。"
+                + "【风险与边界】该结论可能受到课程难度、考试周期、出勤、作息及样本窗口长度等因素影响。"
+                + "【建议动作】建议在同一筛选口径下持续观察4-8周；将消费、考勤、课程负担做联动分析；"
+                + "针对高波动人群开展分层支持并复盘干预前后变化。"
+                + "该结果仅反映统计相关关系，不代表因果关系。"
+            )
+        else:
+            fallback = (
+                "当前筛选范围内可用于关联分析的有效样本不足。"
+                "建议优先扩大时间区间、放宽筛选条件，或先在学院/年级层面观察总体趋势后再下钻到班级与个人。"
+                "该结果仅反映统计相关关系，不代表因果关系。"
+            )
+    elif scene == "score-correlation-personal":
+        summary = data.get("summary", {}) if isinstance(data, dict) else {}
+        profile = data.get("studentProfile", {}) if isinstance(data, dict) else {}
+        sid = profile.get("studentId", "-")
+        daily = profile.get("dailyAvg", 0)
+        monthly = profile.get("monthlyAvg", 0)
+        gpa = profile.get("gpa", 0)
+        avg_daily = summary.get("avgDaily", 0)
+        avg_gpa = summary.get("avgGpa", 0)
+        try:
+            diff_daily = float(daily) - float(avg_daily)
+        except Exception:
+            diff_daily = 0.0
+        try:
+            diff_gpa = float(gpa) - float(avg_gpa)
+        except Exception:
+            diff_gpa = 0.0
+        daily_flag = "高于" if diff_daily >= 0 else "低于"
+        gpa_flag = "高于" if diff_gpa >= 0 else "低于"
+        fallback = (
+            f"【个人概况】学号{sid}在当前筛选范围内，日均消费约{daily}元、月均消费约{monthly}元，GPA约{gpa}。"
+            f"【群体对比】与同口径群体均值比较，日均消费{daily_flag}群体约{abs(diff_daily):.2f}元，"
+            f"GPA{gpa_flag}群体约{abs(diff_gpa):.2f}。"
+            "【位置解读】该学生在“消费-成绩”坐标中与群体中心存在偏移，适合结合周度波动持续观察而非一次性定性。"
+            "【风险与边界】短期事件（考试周、活动、兼职、节假日）可能放大偏差，需要联合考勤与作息信息判读。"
+            "【建议动作】建议连续观察4-8周消费波动与绩点变化，识别异常日期并记录事件原因；"
+            "同时结合课程负担与出勤做交叉验证，必要时提供个性化预算与学习节律建议。"
+            "该结果仅反映统计相关关系，不代表因果关系。"
+        )
+    else:
+        portrait = data.get("portrait", {}) if isinstance(data, dict) else {}
+        metrics = data.get("metrics", {}) if isinstance(data, dict) else {}
+        level = portrait.get("level", "当前层级")
+        activity = portrait.get("activity", "常规活跃度")
+        schedule = portrait.get("schedule", "日常分布")
+        month_amount = metrics.get("monthAvgAmount", "-")
+        month_count = metrics.get("monthAvgCount", "-")
+        daily_amount = metrics.get("dailyAvg", "-")
+        daily_count = metrics.get("dailyCount", "-")
+        peak_period = metrics.get("peakPeriod", "-")
+        favorite_window = metrics.get("favoriteWindow", "常去窗口")
+        fallback = (
+            f"当前画像显示你属于{level}，整体活跃度为{activity}，消费节奏呈现{schedule}。"
+            f"从指标看，日均消费约{daily_amount}元、日均消费次数约{daily_count}次，"
+            f"月均消费约{month_amount}元、月均消费次数约{month_count}次，"
+            f"消费高峰多出现在{peak_period}，常去窗口为{favorite_window}。"
+            "整体说明你的消费习惯具有一定稳定性。建议优先保持规律餐次与预算边界，"
+            "对高峰时段的单次消费做简单记录，连续观察2-4周后再调整。"
+            "以上结论仅反映消费行为特征，不代表任何行政认定。"
+        )
+    return {"text": fallback, "scene": scene, "fallback": True}
 
 
 # 🔥 修改的接口：使用查询参数而不是请求体
@@ -817,6 +1015,54 @@ def get_summary_data(
     except Exception as e:
         print(f"数据处理错误: {e}")
         return {"error": f"数据处理失败: {str(e)}"}
+
+
+@app.get("/analysis/dashboard/overview")
+def get_dashboard_overview(
+        college: Optional[str] = Query(None, description="学院"),
+        major: Optional[str] = Query(None, description="专业"),
+        grade: Optional[str] = Query(None, description="年级"),
+        className: Optional[str] = Query(None, description="班级"),
+        studentId: Optional[str] = Query(None, description="学号"),
+        timeBegin: Optional[str] = Query(None, description="开始日期 YYYY-MM-DD"),
+        timeEnd: Optional[str] = Query(None, description="结束日期 YYYY-MM-DD"),
+        start_date: Optional[str] = Query(None, description="开始日期 YYYY-MM-DD"),
+        end_date: Optional[str] = Query(None, description="结束日期 YYYY-MM-DD")
+):
+    begin_raw = timeBegin or start_date
+    end_raw = timeEnd or end_date
+
+    begin_date = None
+    end_date_obj = None
+    if begin_raw:
+        try:
+            begin_date = datetime.strptime(begin_raw, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="timeBegin/start_date 格式错误，需 YYYY-MM-DD")
+    if end_raw:
+        try:
+            end_date_obj = datetime.strptime(end_raw, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="timeEnd/end_date 格式错误，需 YYYY-MM-DD")
+
+    body = BaseBody(
+        college=college,
+        major=major,
+        grade=grade,
+        className=className,
+        studentId=studentId,
+        timeBegin=begin_date,
+        timeEnd=end_date_obj,
+    )
+
+    key = "api:dashboard:overview:v1:" + body.model_dump_json()
+    val = r.get_key(key)
+    if val:
+        return json.loads(val)
+
+    res = analysis_service.get_dashboard_overview(body)
+    r.set_key(key, json.dumps(res), ex=300)
+    return res
 
 
 @app.get("/")

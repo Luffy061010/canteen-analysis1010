@@ -13,7 +13,7 @@
       
       <!-- 系统名称和副标题 -->
       <div class="system-info">
-        <h1 class="system-title">贫困生识别与用户画像构建系统</h1>
+        <h1 class="system-title">用户消费分析与画像系统 V1.0</h1>
         <p class="system-subtitle">基于大学生食堂消费数据流分析</p>
       </div>
     </div>

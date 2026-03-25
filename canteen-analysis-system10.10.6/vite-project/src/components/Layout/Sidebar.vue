@@ -11,10 +11,10 @@
         unique-opened
     >
       <template v-if="isAdmin">
-        <!-- 系统总览 -->
+        <!-- 首页 -->
         <el-menu-item index="/">
           <el-icon><House /></el-icon>
-          <span>系统总览</span>
+          <span>首页</span>
         </el-menu-item>
 
         <!-- 学生信息管理 -->
@@ -26,7 +26,12 @@
         <!-- 消费信息查询 -->
         <el-menu-item index="/consumption-query">
           <el-icon><Search /></el-icon>
-          <span>消费信息查询</span>
+          <span>学生消费信息查询</span>
+        </el-menu-item>
+
+        <el-menu-item index="/consumption-statistics">
+          <el-icon><PieChart /></el-icon>
+          <span>学生消费数据统计</span>
         </el-menu-item>
 
         <!-- 消费数据分析 -->
@@ -36,19 +41,14 @@
             <span>消费数据分析</span>
           </template>
 
-          <el-menu-item index="/consumption-analysis/data-query">
-            <el-icon><TrendCharts /></el-icon>
-            <span>消费数据统计</span>
-          </el-menu-item>
-
           <el-menu-item index="/consumption-analysis/drift-detection">
             <el-icon><Warning /></el-icon>
             <span>概念漂移检测</span>
           </el-menu-item>
 
-          <el-menu-item index="/consumption-analysis/poverty-identification">
+          <el-menu-item index="/consumption-analysis/user-portrait-analysis">
             <el-icon><Star /></el-icon>
-            <span>贫困生识别</span>
+            <span>用户画像构建</span>
           </el-menu-item>
 
           <el-menu-item index="/consumption-analysis/score-correlation">
@@ -59,15 +59,15 @@
       </template>
 
       <template v-else>
-        <!-- 简化的用户侧边栏：指向用户模块的消费查询与近期变化 -->
+        <!-- 普通用户菜单 -->
         <el-menu-item index="/user-consumption">
           <el-icon><Search /></el-icon>
-          <span>我的消费查询</span>
+          <span>个人消费查询</span>
         </el-menu-item>
 
-        <el-menu-item index="/user-recent-changes">
-          <el-icon><TrendCharts /></el-icon>
-          <span>近期消费变化</span>
+        <el-menu-item index="/user-portrait">
+          <el-icon><User /></el-icon>
+          <span>个人用户画像</span>
         </el-menu-item>
       </template>
 
@@ -101,10 +101,10 @@ import {
   User,
   Search,
   DataAnalysis,
-  TrendCharts,
   Warning,
   Star,
-  Connection
+  Connection,
+  PieChart
 } from '@element-plus/icons-vue'
 import { getStoredUserInfo } from '@/utils/auth'
 
