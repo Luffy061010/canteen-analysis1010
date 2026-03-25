@@ -45,79 +45,89 @@
     </select>
     <select id="simpleConsumptionStat"
             resultType="xyz.mambaout.canteenanalysis.entity.vo.SimpleConsumptionStatVO">
-        SELECT SUM(c.amount) totalAmount,COUNT(*) totalRecords,AVG(c.amount) averageConsumption,COUNT(DISTINCT c.student_id) totalStudents FROM consumption_data_students_consumption c,basic_data_student
+        SELECT
+            SUM(c.amount) totalAmount,
+            COUNT(*) totalRecords,
+            AVG(c.amount) averageConsumption,
+            COUNT(DISTINCT c.student_id) totalStudents
+        FROM consumption_data_students_consumption c
+        INNER JOIN basic_data_student s ON c.student_id = s.student_id
         <where> 
             <if test="grade!=null and grade!=''">
-                AND basic_data_student.grade = #{grade}
+                AND s.grade = #{grade}
             </if>
             <if test="college!=null and college!=''">
-                AND basic_data_student.college = #{college}
+                AND s.college = #{college}
             </if>
             <if test="major!=null and major!=''">
-                AND basic_data_student.major = #{major}
+                AND s.major = #{major}
             </if>
             <if test="className!=null and className!=''">
-                AND basic_data_student.class_name = #{className}
+                AND s.class_name = #{className}
             </if>
             <if test="studentId!=null and studentId!=''">
-                AND basic_data_student.student_id = #{studentId}
+                AND s.student_id = #{studentId}
             </if>
             <if test="timeBegin != null and timeEnd != null">
                 AND c.consumption_time &gt;= #{timeBegin}
                 AND c.consumption_time &lt; DATE_ADD(#{timeEnd}, INTERVAL 1 DAY)
             </if>
         </where>
-        AND c.student_id = basic_data_student.student_id
     </select>
     <select id="topWindowStat" resultType="java.util.Map">
-        SELECT c.window_id windowId,SUM(c.amount) windowAmount FROM consumption_data_students_consumption c,basic_data_student
+        SELECT c.window_id windowId,SUM(c.amount) windowAmount
+        FROM consumption_data_students_consumption c
+        INNER JOIN basic_data_student s ON c.student_id = s.student_id
         <where>
             <if test="grade!=null and grade!=''">
-                AND basic_data_student.grade = #{grade}
+                AND s.grade = #{grade}
             </if>
             <if test="college!=null and college!=''">
-                AND basic_data_student.college = #{college}
+                AND s.college = #{college}
             </if>
             <if test="major!=null and major!=''">
-                AND basic_data_student.major = #{major}
+                AND s.major = #{major}
             </if>
             <if test="className!=null and className!=''">
-                AND basic_data_student.class_name = #{className}
+                AND s.class_name = #{className}
             </if>
             <if test="studentId!=null and studentId!=''">
-                AND basic_data_student.student_id = #{studentId}
+                AND s.student_id = #{studentId}
             </if>
             <if test="timeBegin != null and timeEnd != null">
                 AND c.consumption_time &gt;= #{timeBegin}
                 AND c.consumption_time &lt; DATE_ADD(#{timeEnd}, INTERVAL 1 DAY)
             </if>
         </where>
-        AND c.student_id = basic_data_student.student_id
         GROUP BY c.window_id ORDER BY windowAmount DESC LIMIT 6
     </select>
     <select id="consumptionCompareStat" resultType="java.util.Map">
-        SELECT SUM(c.amount) totalAmount,COUNT(*) totalRecords,COUNT(DISTINCT c.student_id) totalStudents FROM consumption_data_students_consumption c,basic_data_student
+        SELECT
+            SUM(c.amount) totalAmount,
+            COUNT(*) totalRecords,
+            COUNT(DISTINCT c.student_id) totalStudents
+        FROM consumption_data_students_consumption c
+        INNER JOIN basic_data_student s ON c.student_id = s.student_id
         <where>
             <if test="grade!=null and grade!=''">
-                AND basic_data_student.grade = #{grade}
+                AND s.grade = #{grade}
             </if>
             <if test="college!=null and college!=''">
-                AND basic_data_student.college = #{college}
+                AND s.college = #{college}
             </if>
             <if test="major!=null and major!=''">
-                AND basic_data_student.major = #{major}
+                AND s.major = #{major}
             </if>
             <if test="className!=null and className!=''">
-                AND basic_data_student.class_name = #{className}
+                AND s.class_name = #{className}
             </if>
             <if test="studentId!=null and studentId!=''">
-                AND basic_data_student.student_id = #{studentId}
+                AND s.student_id = #{studentId}
             </if>
             <if test="timeBegin != null and timeEnd != null">
                 AND c.consumption_time &gt;= #{timeBegin}
                 AND c.consumption_time &lt; DATE_ADD(#{timeEnd}, INTERVAL 1 DAY)
             </if>
-            AND c.student_id = basic_data_student.student_id
         </where>
     </select>
 </mapper>

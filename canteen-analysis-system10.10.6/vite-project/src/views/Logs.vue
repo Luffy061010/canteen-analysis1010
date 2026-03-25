@@ -46,7 +46,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { searchLogs, deleteSystemLogs } from '@/api/user.js'
+import { searchLogs, deleteSystemLogs, exportSystemLogs } from '@/api/user.js'
 import { exportXlsx } from '@/utils/download'
 
 const logs = ref([])
@@ -78,8 +78,8 @@ const fetchLogs = async (p = page.value) => {
 }
 
 const fetchAllLogsForExport = async () => {
-  const maxPages = 200
-  const exportPageSize = 1000
+  const maxPages = 30
+  const exportPageSize = 500
   let p = 1
   let all = []
   while (p <= maxPages) {
@@ -92,9 +92,74 @@ const fetchAllLogsForExport = async () => {
   return all
 }
 
+const parseCsvLine = (line) => {
+  const out = []
+  let current = ''
+  let inQuotes = false
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i]
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"'
+        i += 1
+      } else {
+        inQuotes = !inQuotes
+      }
+    } else if (ch === ',' && !inQuotes) {
+      out.push(current)
+      current = ''
+    } else {
+      current += ch
+    }
+  }
+  out.push(current)
+  return out
+}
+
+const fetchLogsByExportApi = async () => {
+  const blob = await exportSystemLogs(buildParams(1))
+  const text = await new Response(blob).text()
+  const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/).filter(Boolean)
+  if (lines.length <= 1) return []
+
+  const headers = parseCsvLine(lines[0])
+  const headerIndex = headers.reduce((acc, key, idx) => {
+    acc[String(key || '').trim()] = idx
+    return acc
+  }, {})
+
+  const getByKey = (cols, key) => {
+    const idx = headerIndex[key]
+    if (idx === undefined) return ''
+    return cols[idx] ?? ''
+  }
+
+  const rows = []
+  for (let i = 1; i < lines.length; i += 1) {
+    const cols = parseCsvLine(lines[i])
+    if (!cols.length) continue
+    rows.push({
+      id: getByKey(cols, 'id') || '',
+      user_id: getByKey(cols, 'user_id') || '',
+      username: getByKey(cols, 'username') || '',
+      action: getByKey(cols, 'action') || '',
+      detail: getByKey(cols, 'detail') || '',
+      created_at: getByKey(cols, 'created_at') || ''
+    })
+  }
+
+  return rows
+}
+
 const exportExcel = async () => {
   try {
-    const rows = await fetchAllLogsForExport()
+    let rows = []
+    try {
+      rows = await fetchLogsByExportApi()
+    } catch (e) {
+      console.warn('日志导出接口不可用，回退分页拉取', e)
+      rows = await fetchAllLogsForExport()
+    }
     if (!rows.length) {
       ElMessage.warning('无可导出日志')
       return

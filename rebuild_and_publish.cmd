@@ -4,7 +4,7 @@ setlocal
 
 cd /d "%~dp0"
 
-set VERSION=v1.0.0
+set VERSION=v1.0
 
 echo [1/6] 清理本地旧容器和卷
 docker compose down -v

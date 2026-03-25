@@ -28,6 +28,7 @@ public class SystemLogServiceImpl implements ISystemLogService {
     public PageResult<SystemLog> queryLogs(LogQuery query) {
         Integer pageNum = query.getPage() == null || query.getPage() < 1 ? 1 : query.getPage();
         Integer pageSize = query.getPageSize() == null || query.getPageSize() < 1 ? 10 : query.getPageSize();
+        pageSize = Math.min(pageSize, 500);
 
         PageHelper.startPage(pageNum, pageSize);
         List<SystemLog> list = systemLogMapper.queryLogs(query);

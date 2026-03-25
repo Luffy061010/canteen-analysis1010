@@ -1,7 +1,7 @@
 <script setup>
 import {ref, onMounted, watch, nextTick} from 'vue'
 import * as echarts from 'echarts'
-import { getStudentInfo } from '@/api/user.js'
+import { exportStudents, getStudentInfo } from '@/api/user.js'
 import { getStudentScores } from '@/api/user.js'
 import { ElMessage } from 'element-plus'
 import {COLLEGES_MAJORS, generateClassNames} from '@/utils/const_value.js'
@@ -244,7 +244,7 @@ const handleReset = () => {
 const fetchAllStudentsForExport = async () => {
   const baseParams = buildQueryParams()
   const pageSize = 500
-  const maxPages = 100
+  const maxPages = 30
   let page = 1
   let all = []
   let total = null
@@ -292,10 +292,83 @@ const fetchAllStudentsForExport = async () => {
   })
 }
 
+const parseCsvLine = (line) => {
+  const out = []
+  let current = ''
+  let inQuotes = false
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i]
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"'
+        i += 1
+      } else {
+        inQuotes = !inQuotes
+      }
+    } else if (ch === ',' && !inQuotes) {
+      out.push(current)
+      current = ''
+    } else {
+      current += ch
+    }
+  }
+  out.push(current)
+  return out
+}
+
+const fetchStudentsByExportApi = async () => {
+  const params = buildQueryParams()
+  const blob = await exportStudents(params)
+  const text = await new Response(blob).text()
+  const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/).filter(Boolean)
+  if (lines.length <= 1) return []
+
+  const headers = parseCsvLine(lines[0])
+  const headerIndex = headers.reduce((acc, key, idx) => {
+    acc[String(key || '').trim()] = idx
+    return acc
+  }, {})
+  const getByKey = (cols, key) => {
+    const idx = headerIndex[key]
+    if (idx === undefined) return ''
+    return cols[idx] ?? ''
+  }
+
+  const normalizeGender = (val) => {
+    if (val === 'M') return '男'
+    if (val === 'F') return '女'
+    return val || ''
+  }
+
+  const rows = []
+  for (let i = 1; i < lines.length; i += 1) {
+    const cols = parseCsvLine(lines[i])
+    if (!cols.length) continue
+    rows.push({
+      studentId: getByKey(cols, 'studentId') || '-',
+      name: getByKey(cols, 'name') || '-',
+      gender: normalizeGender(getByKey(cols, 'gender')),
+      college: getByKey(cols, 'college') || '-',
+      major: getByKey(cols, 'major') || '-',
+      className: getByKey(cols, 'className') || '-',
+      grade: getByKey(cols, 'grade') || '',
+      phone: getByKey(cols, 'phoneNumber') || ''
+    })
+  }
+
+  return rows
+}
+
 const handleExport = async () => {
   try {
     loading.value = true
-    const rows = await fetchAllStudentsForExport()
+    let rows = []
+    try {
+      rows = await fetchStudentsByExportApi()
+    } catch (e) {
+      console.warn('学生导出接口不可用，回退分页拉取', e)
+      rows = await fetchAllStudentsForExport()
+    }
     if (!rows.length) {
       ElMessage.warning('无可导出数据')
       return

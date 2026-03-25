@@ -29,6 +29,7 @@ public class StudentBasicInfoServiceImpl implements IStudentBasicInfoService {
     public PageResult<BasicDataStudent> getStudentInfo(BasicQuery studentquery) {
         Integer pageNum = studentquery.getPage() == null || studentquery.getPage() < 1 ? 1 : studentquery.getPage();
         Integer pageSize = studentquery.getPageSize() == null || studentquery.getPageSize() < 1 ? 20 : studentquery.getPageSize();
+        pageSize = Math.min(pageSize, 500);
 
         PageHelper.startPage(pageNum, pageSize);
         Page<BasicDataStudent> page =(Page<BasicDataStudent>) studentMapper.getStudentInfo(studentquery);

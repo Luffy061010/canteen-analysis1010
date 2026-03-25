@@ -243,7 +243,7 @@ export default {
       })
     },
 
-    buildParams(pageSize = 5000) {
+    buildParams(pageSize = 1000) {
       const [timeBegin, timeEnd] = Array.isArray(this.queryForm.dateRange) && this.queryForm.dateRange.length === 2
         ? this.queryForm.dateRange
         : []

@@ -99,6 +99,8 @@ def get_users(
     is_admin: Optional[bool] = None,
     current_user=Depends(admin_required)
 ):
+    page = max(1, int(page or 1))
+    page_size = max(1, min(int(page_size or 20), 200))
     offset = (page - 1) * page_size
     where_clauses = []
     params = []
@@ -157,8 +159,8 @@ def add_user(user: UserCreate, current_user=Depends(admin_required)):
         'INSERT INTO user (username, password_hash, is_admin, is_active) VALUES (%s, %s, %s, %s)',
         (username, password_hash, bool(user.is_admin), bool(user.is_active))
     )
-    conn.commit()
     user_id = cursor.lastrowid
+    conn.commit()
     conn.close()
     write_log(current_user["user_id"], current_user["username"], 'add_user', f'添加用户 {username}')
     return {'msg': '添加成功', 'id': user_id}
@@ -401,6 +403,8 @@ def approve_admin_application(app_id: int, current_user=Depends(admin_required))
 # 日志查询接口（支持分页）
 @app.get('/logs')
 def get_logs(page: int = 1, page_size: int = 50, current_user=Depends(get_current_user), user_id: int = None):
+    page = max(1, int(page))
+    page_size = max(1, min(int(page_size), 500))
     offset = (page - 1) * page_size
     conn = get_db()
     cursor = conn.cursor()
@@ -461,9 +465,10 @@ def export_logs(
 
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute(f'SELECT id, user_id, username, action, detail, created_at FROM log{where_sql} ORDER BY created_at DESC', params)
-    rows = cursor.fetchall()
-    conn.close()
+    cursor.execute(
+        f'SELECT id, user_id, username, action, detail, created_at FROM log{where_sql} ORDER BY created_at DESC',
+        params
+    )
 
     def excel_text(val, force_text=False):
         if val is None:
@@ -474,28 +479,35 @@ def export_logs(
         return text
 
     def gen():
-        yield '\ufeff'
-        output = io.StringIO()
-        writer = csv.writer(output)
-        writer.writerow(['id', 'user_id', 'username', 'action', 'detail', 'created_at'])
-        yield output.getvalue()
-        output.seek(0)
-        output.truncate(0)
-
-        for r in rows:
-            created = r[5].strftime('%Y-%m-%d %H:%M:%S') if r[5] else ''
-            detail = (r[4] or '').replace('\n', ' ').replace('\r', ' ')
-            writer.writerow([
-                excel_text(r[0]),
-                excel_text(r[1]),
-                excel_text(r[2], force_text=True),
-                r[3] or '',
-                detail,
-                excel_text(created, force_text=True)
-            ])
+        try:
+            yield '\ufeff'
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow(['id', 'user_id', 'username', 'action', 'detail', 'created_at'])
             yield output.getvalue()
             output.seek(0)
             output.truncate(0)
+
+            while True:
+                rows = cursor.fetchmany(1000)
+                if not rows:
+                    break
+                for r in rows:
+                    created = r[5].strftime('%Y-%m-%d %H:%M:%S') if r[5] else ''
+                    detail = (r[4] or '').replace('\n', ' ').replace('\r', ' ')
+                    writer.writerow([
+                        excel_text(r[0]),
+                        excel_text(r[1]),
+                        excel_text(r[2], force_text=True),
+                        r[3] or '',
+                        detail,
+                        excel_text(created, force_text=True)
+                    ])
+                    yield output.getvalue()
+                    output.seek(0)
+                    output.truncate(0)
+        finally:
+            conn.close()
 
     headers = {
         'Content-Disposition': f'attachment; filename=logs_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
@@ -508,6 +520,8 @@ def export_logs(
 def search_logs(username: Optional[str] = None, action: Optional[str] = None,
                 start_date: Optional[str] = None, end_date: Optional[str] = None,
                 page: int = 1, page_size: int = 50, current_user=Depends(get_current_user)):
+    page = max(1, int(page))
+    page_size = max(1, min(int(page_size), 500))
     offset = (page - 1) * page_size
     where_clauses = []
     params = []
@@ -738,7 +752,7 @@ def analysis_cluster(cluster_body: ClusterBody = Depends()):
         return json.loads(val)
 
     res = analysis_service.analysis_cluster(cluster_body)
-    r.set_key(key, json.dumps(res))
+    r.set_key(key, json.dumps(res), ex=600)
     return res
 
 
@@ -786,7 +800,7 @@ def analysis_drift(drift_body: DriftBody = Depends()):
         return json.loads(val)
 
     res = analysis_service.analysis_drift(drift_body)
-    r.set_key(key, json.dumps(res))
+    r.set_key(key, json.dumps(res), ex=600)
     return res
 
 
@@ -799,7 +813,7 @@ def analysis_correlation(correlation_body: CorrelationBody = Depends()):
         return json.loads(val)
 
     res = analysis_service.analysis_correlation(correlation_body)
-    r.set_key(key, json.dumps(res))
+    r.set_key(key, json.dumps(res), ex=600)
     return res
 
 
@@ -1010,7 +1024,7 @@ def get_summary_data(
         df.reset_index(inplace=True)
         df = df.rename(columns={'index': 'student_id'})
 
-        r.set_key(key, json.dumps(df.to_dict(orient="records")))
+        r.set_key(key, json.dumps(df.to_dict(orient="records")), ex=600)
         return df.to_dict(orient="records")
     except Exception as e:
         print(f"数据处理错误: {e}")

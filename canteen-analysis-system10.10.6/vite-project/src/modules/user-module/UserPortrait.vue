@@ -96,7 +96,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
-import { getClusterDetails, getConsumptionData, getDeepSeekExplanation, getPovertyIdentification, getStudentInfo } from '@/api/user'
+import { exportConsumptionData, getClusterDetails, getConsumptionData, getDeepSeekExplanation, getPovertyIdentification, getStudentInfo } from '@/api/user'
 import { getStoredUserInfo } from '@/utils/auth'
 
 const userInfo = getStoredUserInfo() || {}
@@ -208,9 +208,71 @@ const getTotal = (res, fallback = 0) => {
   return Number.isNaN(total) ? fallback : total
 }
 
+const parseCsvLine = (line) => {
+  const out = []
+  let current = ''
+  let inQuotes = false
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i]
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"'
+        i += 1
+      } else {
+        inQuotes = !inQuotes
+      }
+    } else if (ch === ',' && !inQuotes) {
+      out.push(current)
+      current = ''
+    } else {
+      current += ch
+    }
+  }
+  out.push(current)
+  return out
+}
+
+const fetchRecordsByExport = async (studentId) => {
+  const blob = await exportConsumptionData({ studentId })
+  const text = await new Response(blob).text()
+  const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/).filter(Boolean)
+  if (lines.length <= 1) return []
+
+  const headers = parseCsvLine(lines[0])
+  const headerIndex = headers.reduce((acc, key, idx) => {
+    acc[String(key || '').trim()] = idx
+    return acc
+  }, {})
+  const getByKey = (cols, key) => {
+    const idx = headerIndex[key]
+    if (idx === undefined) return ''
+    return cols[idx] ?? ''
+  }
+
+  const rows = []
+  for (let i = 1; i < lines.length; i += 1) {
+    const cols = parseCsvLine(lines[i])
+    if (!cols.length) continue
+    rows.push({
+      studentId: getByKey(cols, 'studentId'),
+      consumptionTime: getByKey(cols, 'consumptionTime'),
+      amount: getByKey(cols, 'amount'),
+      mealType: getByKey(cols, 'mealType'),
+      windowId: getByKey(cols, 'windowId')
+    })
+  }
+  return rows
+}
+
 const fetchAllConsumptionRecords = async (studentId) => {
-  const pageSize = 2000
-  const maxPages = 80
+  try {
+    return await fetchRecordsByExport(studentId)
+  } catch (e) {
+    console.warn('画像消费导出通道不可用，回退分页拉取', e)
+  }
+
+  const pageSize = 500
+  const maxPages = 30
   let page = 1
   let allRows = []
   let total = 0

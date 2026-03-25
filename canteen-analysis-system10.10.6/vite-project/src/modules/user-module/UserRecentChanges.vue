@@ -15,7 +15,7 @@
 
 <script setup>
 import { ref, onMounted, nextTick } from 'vue'
-import { getConsumptionData } from '@/api/user'
+import { exportConsumptionData, getConsumptionData } from '@/api/user'
 import * as echarts from 'echarts'
 import { getStoredUserInfo } from '@/utils/auth'
 
@@ -38,8 +38,66 @@ const render = (dates, series) => {
 }
 
 const fetchAllRecords = async (baseParams) => {
-  const pageSize = 1000
-  const maxPages = 50
+  const parseCsvLine = (line) => {
+    const out = []
+    let current = ''
+    let inQuotes = false
+    for (let i = 0; i < line.length; i += 1) {
+      const ch = line[i]
+      if (ch === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          current += '"'
+          i += 1
+        } else {
+          inQuotes = !inQuotes
+        }
+      } else if (ch === ',' && !inQuotes) {
+        out.push(current)
+        current = ''
+      } else {
+        current += ch
+      }
+    }
+    out.push(current)
+    return out
+  }
+
+  try {
+    const blob = await exportConsumptionData(baseParams)
+    const text = await new Response(blob).text()
+    const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/).filter(Boolean)
+    if (lines.length <= 1) return []
+
+    const headers = parseCsvLine(lines[0])
+    const headerIndex = headers.reduce((acc, key, idx) => {
+      acc[String(key || '').trim()] = idx
+      return acc
+    }, {})
+    const getByKey = (cols, key) => {
+      const idx = headerIndex[key]
+      if (idx === undefined) return ''
+      return cols[idx] ?? ''
+    }
+
+    const rows = []
+    for (let i = 1; i < lines.length; i += 1) {
+      const cols = parseCsvLine(lines[i])
+      if (!cols.length) continue
+      rows.push({
+        studentId: getByKey(cols, 'studentId'),
+        consumptionTime: getByKey(cols, 'consumptionTime'),
+        amount: getByKey(cols, 'amount'),
+        mealType: getByKey(cols, 'mealType'),
+        windowId: getByKey(cols, 'windowId')
+      })
+    }
+    return rows
+  } catch (e) {
+    console.warn('近期变化导出通道不可用，回退分页拉取', e)
+  }
+
+  const pageSize = 500
+  const maxPages = 30
   let page = 1
   let all = []
   let total = null

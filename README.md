@@ -7,7 +7,7 @@
 - `java`：Spring Boot
 - `mysql`：MySQL 8.0
 
-镜像版本固定为 `v1.0.0`，数据库数据来自仓库内 `docker/mysql/init/003_back_end_data.sql`，首次部署会自动导入。
+镜像版本固定为 `v1.0`，数据库数据来自仓库内 `docker/mysql/init/003_back_end_data.sql`，首次部署会自动导入。
 
 ## 1. 你发布系统（上传到 Docker Hub）
 
@@ -17,9 +17,9 @@
 
 会构建并推送以下镜像：
 
-- `lln1010/1010-frontend:v1.0.0`
-- `lln1010/1010-python:v1.0.0`
-- `lln1010/1010-java:v1.0.0`
+- `lln1010/1010-frontend:v1.0`
+- `lln1010/1010-python:v1.0`
+- `lln1010/1010-java:v1.0`
 
 ## 2. 他人命令行部署（无需你额外传数据库文件）
 

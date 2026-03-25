@@ -5,7 +5,16 @@
 <mapper namespace="xyz.mambaout.canteenanalysis.mapper.BasicDataStudentMapper">
 
     <select id="getStudentInfo" resultType="xyz.mambaout.canteenanalysis.entity.po.BasicDataStudent">
-        SELECT * FROM basic_data_student
+        SELECT
+            student_id AS studentId,
+            grade,
+            college,
+            major,
+            name,
+            class_name AS className,
+            gender,
+            phone_number AS phoneNumber
+        FROM basic_data_student
         <where>
             <if test="grade!=null and grade!=''">
                 AND grade = #{grade}

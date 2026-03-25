@@ -105,44 +105,6 @@ const safeNumber = (v) => {
   return Number.isNaN(n) ? 0 : n
 }
 
-const getRecordRows = (res) => {
-  const rows = res?.records || res?.data?.records || res?.data || []
-  return Array.isArray(rows) ? rows : []
-}
-
-const getRecordTotal = (res, fallback = 0) => {
-  const total = Number(res?.total || res?.totalCount || res?.data?.total || res?.data?.totalCount || fallback || 0)
-  return Number.isNaN(total) ? fallback : total
-}
-
-const fetchAllConsumptionRecords = async (query = {}) => {
-  const pageSize = 1000
-  const maxPages = 3
-  const maxRows = 3000
-  let page = 1
-  let allRows = []
-  let total = 0
-
-  while (page <= maxPages) {
-    const res = await getConsumptionData({ ...query, page, pageSize })
-    const rows = getRecordRows(res)
-    if (!rows.length) break
-
-    allRows = allRows.concat(rows)
-    total = getRecordTotal(res, allRows.length)
-
-    // 首页只需要近段时间画像，限制最大记录数避免大数据量下页面阻塞。
-    if (allRows.length >= maxRows) break
-
-    if (allRows.length >= total) break
-    if (rows.length < pageSize) break
-
-    page += 1
-  }
-
-  return allRows
-}
-
 const parseTime = (record) => {
   const raw = record?.consumptionTime || record?.consumption_time || record?.consume_time || record?.consumeTime || ''
   if (!raw) return null

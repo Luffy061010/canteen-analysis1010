@@ -213,6 +213,7 @@
 
 <script>
 import { getConsumption, getConsumptionData, getStudentInfo } from '@/api/user.js'
+import { exportConsumptionData } from '@/api/user'
 import { exportXlsx } from '@/utils/download'
 import { COLLEGES_MAJORS, generateClassNames } from '@/utils/const_value.js'
 
@@ -256,6 +257,67 @@ export default {
     this.loadAllData();
   },
   methods: {
+        parseCsvLine(line) {
+          const out = []
+          let current = ''
+          let inQuotes = false
+          for (let i = 0; i < line.length; i += 1) {
+            const ch = line[i]
+            if (ch === '"') {
+              if (inQuotes && line[i + 1] === '"') {
+                current += '"'
+                i += 1
+              } else {
+                inQuotes = !inQuotes
+              }
+            } else if (ch === ',' && !inQuotes) {
+              out.push(current)
+              current = ''
+            } else {
+              current += ch
+            }
+          }
+          out.push(current)
+          return out
+        },
+
+        async fetchExportRecordsFromServer() {
+          const baseParams = this.buildRequestParams()
+          const blob = await exportConsumptionData(baseParams)
+          const text = await new Response(blob).text()
+          const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/).filter(Boolean)
+          if (!lines.length) return []
+
+          const headers = this.parseCsvLine(lines[0])
+          const headerIndex = headers.reduce((acc, key, idx) => {
+            acc[String(key || '').trim()] = idx
+            return acc
+          }, {})
+
+          const getByKey = (cols, key) => {
+            const idx = headerIndex[key]
+            if (idx === undefined) return ''
+            return cols[idx] ?? ''
+          }
+
+          const rows = []
+          for (let i = 1; i < lines.length; i += 1) {
+            const cols = this.parseCsvLine(lines[i])
+            if (!cols.length) continue
+            rows.push({
+              key: `${getByKey(cols, 'studentId') || i}-${i}`,
+              uid: getByKey(cols, 'studentId') || '-',
+              name: getByKey(cols, 'name') || '-',
+              college: getByKey(cols, 'college') || '-',
+              major: getByKey(cols, 'major') || '-',
+              consume_time: getByKey(cols, 'consumptionTime') || '-',
+              amount: getByKey(cols, 'amount') || '0.00',
+              window: getByKey(cols, 'windowId') || '-',
+            })
+          }
+          return rows
+        },
+
     // 学院变化处理
     handleCollegeChange(college) {
       this.queryForm.major = '';
@@ -344,7 +406,13 @@ export default {
     async handleExport() {
       try {
         this.loading = true
-        const rows = await this.fetchExportRecords()
+        let rows = []
+        try {
+          rows = await this.fetchExportRecordsFromServer()
+        } catch (e) {
+          console.warn('后端导出接口不可用，回退为分页拉取导出', e)
+          rows = await this.fetchExportRecords()
+        }
         if (!rows.length) {
           this.$message.warning('无可导出数据')
           return
@@ -374,8 +442,8 @@ export default {
 
     async fetchExportRecords() {
       const baseParams = this.buildRequestParams()
-      const pageSize = 1000
-      const maxPages = 100
+      const pageSize = 500
+      const maxPages = 30
       let page = 1
       let all = []
       let total = null

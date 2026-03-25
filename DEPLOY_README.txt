@@ -3,9 +3,9 @@
 一、适用场景
 1) 代码已公开在 Git 仓库
 2) 镜像已推送到 Docker Hub：
-	- lln1010/1010-frontend:v1.0.0
-	- lln1010/1010-python:v1.0.0
-	- lln1010/1010-java:v1.0.0
+	- lln1010/1010-frontend:v1.0
+	- lln1010/1010-python:v1.0
+	- lln1010/1010-java:v1.0
 3) 数据库使用官方 mysql:8.0
 4) 对方无需你手工传数据库文件（仓库内 SQL 自动导入）
 
@@ -30,7 +30,7 @@
 
 五、发布新版本（你执行）
 1) 在仓库根目录执行：release.cmd
-2) 完成后推送代码：git add . && git commit -m "release: v1.0.0" && git push
+2) 完成后推送代码：git add . && git commit -m "release: v1.0" && git push
 
 六、常见问题
 1) 端口占用

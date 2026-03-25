@@ -224,7 +224,7 @@
 <script>
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
-import { getConsumptionData, getConsumptionDrift } from '@/api/user.js'
+import { exportConsumptionData, getConsumptionData, getConsumptionDrift } from '@/api/user.js'
 import { COLLEGES_MAJORS, generateClassNames } from '@/utils/const_value.js'
 
 export default {
@@ -365,9 +365,71 @@ export default {
       return Number.isNaN(n) ? fallback : n
     },
 
+    parseCsvLine(line) {
+      const out = []
+      let current = ''
+      let inQuotes = false
+      for (let i = 0; i < line.length; i += 1) {
+        const ch = line[i]
+        if (ch === '"') {
+          if (inQuotes && line[i + 1] === '"') {
+            current += '"'
+            i += 1
+          } else {
+            inQuotes = !inQuotes
+          }
+        } else if (ch === ',' && !inQuotes) {
+          out.push(current)
+          current = ''
+        } else {
+          current += ch
+        }
+      }
+      out.push(current)
+      return out
+    },
+
+    async fetchAllByExport(params) {
+      const blob = await exportConsumptionData(params)
+      const text = await new Response(blob).text()
+      const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/).filter(Boolean)
+      if (lines.length <= 1) return []
+
+      const headers = this.parseCsvLine(lines[0])
+      const headerIndex = headers.reduce((acc, key, idx) => {
+        acc[String(key || '').trim()] = idx
+        return acc
+      }, {})
+      const getByKey = (cols, key) => {
+        const idx = headerIndex[key]
+        if (idx === undefined) return ''
+        return cols[idx] ?? ''
+      }
+
+      const rows = []
+      for (let i = 1; i < lines.length; i += 1) {
+        const cols = this.parseCsvLine(lines[i])
+        if (!cols.length) continue
+        rows.push({
+          studentId: getByKey(cols, 'studentId'),
+          consumptionTime: getByKey(cols, 'consumptionTime'),
+          amount: getByKey(cols, 'amount'),
+          mealType: getByKey(cols, 'mealType'),
+          windowId: getByKey(cols, 'windowId')
+        })
+      }
+      return rows
+    },
+
     async fetchAllConsumptionByParams(params) {
-      const pageSize = 2000
-      const maxPages = 80
+      try {
+        return await this.fetchAllByExport(params)
+      } catch (e) {
+        console.warn('后端导出通道不可用，回退分页拉取', e)
+      }
+
+      const pageSize = 1000
+      const maxPages = 60
       let page = 1
       let allRows = []
       let total = 0

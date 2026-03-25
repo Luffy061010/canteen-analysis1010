@@ -192,6 +192,15 @@ export const getConsumptionData = (form) => {
     })
 }
 
+export const exportConsumptionData = (form) => {
+    const params = ensureTimeRange(buildParams(form))
+    return request.get(`${API_BASE_URL}/consumption_data/StudentConsumption/export`, {
+        params,
+        responseType: 'blob',
+        timeout: 300000
+    })
+}
+
 export const getConsumptionTop = (form) => {
     const params = ensureTimeRange(buildParams(form))
     return request.get(`${API_BASE_URL}/consumption_data/window/top/barAndPie`, {
@@ -462,6 +471,7 @@ export default {
     // 消费数据
     getConsumption,
     getConsumptionData,
+    exportConsumptionData,
     getConsumptionTop,
     getConsumptionGroup,
     getConsumptionTrend,
