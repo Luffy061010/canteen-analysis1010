@@ -22,7 +22,7 @@ services:
       - canteen-net
 
   python:
-    image: lln1010/1010-python:v1.0
+    image: lln1010/1010-python:v1.0.0
     container_name: canteen-python
     restart: unless-stopped
     depends_on:
@@ -47,7 +47,7 @@ services:
           - python
 
   java:
-    image: lln1010/1010-java:v1.0
+    image: lln1010/1010-java:v1.0.0
     container_name: canteen-java
     restart: unless-stopped
     depends_on:
@@ -75,7 +75,7 @@ services:
           - java
 
   frontend:
-    image: lln1010/1010-frontend:v1.0
+    image: lln1010/1010-frontend:v1.0.0
     container_name: canteen-frontend
     restart: unless-stopped
     depends_on:

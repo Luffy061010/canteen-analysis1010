@@ -4,7 +4,7 @@ setlocal
 
 cd /d "%~dp0"
 
-set VERSION=v1.0
+set VERSION=v1.0.0
 set FRONTEND=lln1010/1010-frontend:%VERSION%
 set JAVA=lln1010/1010-java:%VERSION%
 set PYTHON=lln1010/1010-python:%VERSION%
