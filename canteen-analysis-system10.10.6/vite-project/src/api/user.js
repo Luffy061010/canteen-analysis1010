@@ -9,11 +9,17 @@ import { clearAuthToken, clearStoredUserInfo, getAuthToken } from "@/utils/auth"
 const RAW_API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 const API_BASE_URL = RAW_API_BASE_URL === '/api' ? '' : RAW_API_BASE_URL;
 const FASTAPI_BASE_URL = import.meta.env.VITE_FASTAPI_BASE_URL || '/fastapi';
+const parsedRequestTimeout = Number(import.meta.env.VITE_REQUEST_TIMEOUT ?? 60000)
+const REQUEST_TIMEOUT = Number.isFinite(parsedRequestTimeout) && parsedRequestTimeout >= 3000 ? parsedRequestTimeout : 60000
+const parsedFastapiTimeout = Number(import.meta.env.VITE_FASTAPI_TIMEOUT ?? REQUEST_TIMEOUT)
+const FASTAPI_TIMEOUT = Number.isFinite(parsedFastapiTimeout) && parsedFastapiTimeout >= 3000 ? parsedFastapiTimeout : REQUEST_TIMEOUT
+const parsedExportTimeout = Number(import.meta.env.VITE_EXPORT_TIMEOUT ?? Math.max(REQUEST_TIMEOUT, 300000))
+const EXPORT_TIMEOUT = Number.isFinite(parsedExportTimeout) && parsedExportTimeout >= REQUEST_TIMEOUT ? parsedExportTimeout : Math.max(REQUEST_TIMEOUT, 300000)
 
 // 独立的 FastAPI 客户端，防止被 Java 前缀再次代理
 const fastapiRequest = axios.create({
     baseURL: FASTAPI_BASE_URL,
-    timeout: 300000,
+    timeout: FASTAPI_TIMEOUT,
 });
 
 let fastapiUnauthorizedRedirecting = false
@@ -180,7 +186,7 @@ export const getConsumption = (form) => {
     const params = ensureTimeRange(buildParams(form))
     return request.get(`${API_BASE_URL}/consumption_data/StudentConsumptionStat`, {
         params,
-        timeout: 300000
+        timeout: REQUEST_TIMEOUT
     })
 }
 
@@ -188,7 +194,7 @@ export const getConsumptionData = (form) => {
     const params = ensureTimeRange(buildParams(form))
     return request.get(`${API_BASE_URL}/consumption_data/StudentConsumption`, {
         params,
-        timeout: 300000
+        timeout: REQUEST_TIMEOUT
     })
 }
 
@@ -197,7 +203,7 @@ export const exportConsumptionData = (form) => {
     return request.get(`${API_BASE_URL}/consumption_data/StudentConsumption/export`, {
         params,
         responseType: 'blob',
-        timeout: 300000
+        timeout: EXPORT_TIMEOUT
     })
 }
 
@@ -205,13 +211,37 @@ export const getConsumptionTop = (form) => {
     const params = ensureTimeRange(buildParams(form))
     return request.get(`${API_BASE_URL}/consumption_data/window/top/barAndPie`, {
         params,
-        timeout: 300000
+        timeout: REQUEST_TIMEOUT
     })
 }
 
 export const getConsumptionGroup = (form) => {
     // 后端未提供 group 接口，复用 TOP 数据保证页面可用
     return getConsumptionTop(form)
+}
+
+export const getConsumptionDailyTrend = (form) => {
+    const params = ensureTimeRange(buildParams(form))
+    return request.get(`${API_BASE_URL}/consumption_data/daily/trend`, {
+        params,
+        timeout: REQUEST_TIMEOUT,
+        silent404: true
+    }).catch((error) => {
+        if (error?.response?.status === 404) return []
+        throw error
+    })
+}
+
+export const getConsumptionMealType = (form) => {
+    const params = ensureTimeRange(buildParams(form))
+    return request.get(`${API_BASE_URL}/consumption_data/meal/type`, {
+        params,
+        timeout: REQUEST_TIMEOUT,
+        silent404: true
+    }).catch((error) => {
+        if (error?.response?.status === 404) return []
+        throw error
+    })
 }
 
 // ==================== 分析相关API ====================
@@ -267,7 +297,37 @@ export const getSummaryData = (form) => {
 
 export const getDashboardOverview = (form) => {
     const params = buildParams(form)
-    return fastapiRequest.get(`/analysis/dashboard/overview`, { params })
+    return fastapiRequest.get(`/analysis/dashboard/overview`, { params }).catch(async (error) => {
+        const status = error?.response?.status
+        if (status !== 404) {
+            throw error
+        }
+
+        // 兼容后端尚未发布 overview 路由的情况，降级为 summary 数据。
+        const summaryList = await getSummaryData(form).catch(() => [])
+        const records = Array.isArray(summaryList) ? summaryList : []
+        return {
+            statistics: {
+                totalStudents: records.length,
+                latest24hAmount: 0,
+                latest24hRecords: 0
+            },
+            hourly: {
+                latestDay: null,
+                amount: new Array(24).fill(0)
+            },
+            levelDistribution: [],
+            gpaHistogram: {
+                labels: ['<2.0', '2.0-2.5', '2.5-3.0', '3.0-3.5', '3.5-4.0', '>4.0'],
+                values: [0, 0, 0, 0, 0, 0]
+            },
+            drift: {
+                score: 0,
+                hasData: false,
+                note: '后端尚未提供首页聚合接口，已降级显示基础数据'
+            }
+        }
+    })
 }
 
 // ==================== 兼容性API ====================
@@ -316,7 +376,8 @@ export const importStudents = (file) => {
 export const exportStudents = (params) => {
     return request.get(`${API_BASE_URL}/basic_data/student/export`, {
         params,
-        responseType: 'blob'
+        responseType: 'blob',
+        timeout: EXPORT_TIMEOUT
     })
 }
 
@@ -394,7 +455,8 @@ export const exportSystemLogs = (params) => {
     // 导出日志 CSV（管理员）
     return fastapiRequest.get(`/logs/export`, {
         params,
-        responseType: 'blob'
+        responseType: 'blob',
+        timeout: EXPORT_TIMEOUT
     })
 }
 
@@ -474,6 +536,8 @@ export default {
     exportConsumptionData,
     getConsumptionTop,
     getConsumptionGroup,
+    getConsumptionDailyTrend,
+    getConsumptionMealType,
     getConsumptionTrend,
     getWindowRanking,
     getConsumptionDateQuery,

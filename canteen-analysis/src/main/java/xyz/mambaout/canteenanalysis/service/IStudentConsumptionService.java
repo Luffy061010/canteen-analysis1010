@@ -7,6 +7,9 @@ import xyz.mambaout.canteenanalysis.entity.vo.ConsumptionCompareVO;
 import xyz.mambaout.canteenanalysis.entity.vo.SimpleConsumptionStatVO;
 import xyz.mambaout.canteenanalysis.entity.vo.TopWindowStatVO;
 
+import java.util.List;
+import java.util.Map;
+
 /**
  * 学生消费服务接口。
  */
@@ -26,6 +29,16 @@ public interface IStudentConsumptionService {
      * 窗口消费 Top 分布。
      */
     TopWindowStatVO topWindowStat(TimeQuery timeQuery);
+
+    /**
+     * 日消费趋势聚合。
+     */
+    List<Map<String, Object>> dailyTrendStat(TimeQuery timeQuery);
+
+    /**
+     * 餐别消费占比聚合。
+     */
+    List<Map<String, Object>> mealTypeStat(TimeQuery timeQuery);
 
     /**
      * 消费对比统计。

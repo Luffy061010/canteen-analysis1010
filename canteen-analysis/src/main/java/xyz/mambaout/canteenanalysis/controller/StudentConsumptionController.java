@@ -54,6 +54,25 @@ public class StudentConsumptionController {
         log.info("topWindowStat params: {}", timeQuery);
         return consumptionService.topWindowStat(timeQuery);
     }
+
+    /**
+     * 按天聚合消费金额（趋势图）。
+     */
+    @GetMapping("/daily/trend")
+    public List<java.util.Map<String, Object>> dailyTrendStat(TimeQuery timeQuery) {
+        log.info("dailyTrendStat params: {}", timeQuery);
+        return consumptionService.dailyTrendStat(timeQuery);
+    }
+
+    /**
+     * 按餐别聚合消费金额（占比图）。
+     */
+    @GetMapping("/meal/type")
+    public List<java.util.Map<String, Object>> mealTypeStat(TimeQuery timeQuery) {
+        log.info("mealTypeStat params: {}", timeQuery);
+        return consumptionService.mealTypeStat(timeQuery);
+    }
+
     /**
      * 消费对比统计。
      */

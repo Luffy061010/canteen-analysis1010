@@ -42,6 +42,7 @@ import { User, SwitchButton, ArrowDown } from '@element-plus/icons-vue'
 import { logout as logoutApi } from '@/api/user.js'
 import {
   clearAuthToken,
+  resetBootLoginPassed,
   clearStoredUserId,
   clearStoredUserInfo,
   getAuthToken,
@@ -98,6 +99,7 @@ const handleLogout = async () => {
     }
 
     clearAuthToken()
+    resetBootLoginPassed()
     clearStoredUserInfo()
     clearStoredUserId()
     syncUserFromStorage()

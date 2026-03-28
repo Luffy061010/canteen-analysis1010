@@ -105,6 +105,7 @@ import {
   clearStoredUserId,
   clearStoredUserInfo,
   getStoredUserInfo,
+  markBootLoginPassed,
   setAuthToken,
   setStoredUserId,
   setStoredUserInfo
@@ -212,6 +213,7 @@ const handleLogin = async () => {
         clearStoredUserInfo()
         clearStoredUserId()
       }
+      markBootLoginPassed()
       ElMessage.success('登录成功')
       const userInfo = getStoredUserInfo()
       const redirect = router.currentRoute.value.query?.redirect
@@ -219,7 +221,7 @@ const handleLogin = async () => {
         router.replace(String(redirect))
       } else if (userInfo && userInfo.is_admin) {
         // 管理员登录后首先展示系统首页（Dashboard）而非系统管理页
-        router.replace('/')
+        router.replace('/dashboard')
       } else {
         router.replace('/user-consumption')
       }
@@ -276,6 +278,7 @@ const submitRegister = async () => {
         clearStoredUserInfo()
         clearStoredUserId()
       }
+      markBootLoginPassed()
       ElMessage.success('注册并已登录')
       showRegister.value = false
       const userInfo = getStoredUserInfo()
@@ -287,7 +290,7 @@ const submitRegister = async () => {
           console.warn('applyAdmin failed', e)
         }
       }
-      if (userInfo && userInfo.is_admin) router.replace('/')
+      if (userInfo && userInfo.is_admin) router.replace('/dashboard')
       else router.replace('/user-consumption')
     } else {
       ElMessage.success('注册成功，请登录')

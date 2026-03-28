@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { getAuthToken, getStoredUserInfo } from '@/utils/auth'
+import { getAuthToken, getStoredUserInfo, hasBootLoginPassed } from '@/utils/auth'
 
 // 定义路由配置
 const routes = [
@@ -11,6 +11,10 @@ const routes = [
     },
     {
         path: '/',
+        redirect: '/login'
+    },
+    {
+        path: '/dashboard',
         name: 'Dashboard',
         component: () => import('../views/Dashboard.vue'),
         meta: { title: '首页' }
@@ -116,8 +120,14 @@ router.beforeEach((to, from, next) => {
         document.title = `${to.meta.title} - 用户消费分析系统 V1.0`
     }
 
-    const token = getAuthToken()
     const isLoginRoute = to.path === '/login'
+    const token = getAuthToken()
+
+    // 只有当前启动会话完成过登录，才允许进入业务路由。
+    if (!isLoginRoute && !hasBootLoginPassed()) {
+        next({ path: '/login', query: { redirect: to.fullPath } })
+        return
+    }
 
     if (!isLoginRoute && !token) {
         next({ path: '/login', query: { redirect: to.fullPath } })
@@ -129,7 +139,7 @@ router.beforeEach((to, from, next) => {
         const info = getStoredUserInfo()
         if (!info || !info.is_admin) {
             console.warn('需要管理员权限：访问被阻止', to.path)
-            next({ path: '/' })
+            next({ path: '/dashboard' })
             return
         }
     }

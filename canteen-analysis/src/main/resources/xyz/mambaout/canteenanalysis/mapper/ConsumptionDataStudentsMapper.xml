@@ -101,6 +101,65 @@
         </where>
         GROUP BY c.window_id ORDER BY windowAmount DESC LIMIT 6
     </select>
+
+    <select id="dailyTrendStat" resultType="java.util.Map">
+        SELECT DATE(c.consumption_time) AS consumeDate, SUM(c.amount) AS totalAmount
+        FROM consumption_data_students_consumption c
+        INNER JOIN basic_data_student s ON c.student_id = s.student_id
+        <where>
+            <if test="grade!=null and grade!=''">
+                AND s.grade = #{grade}
+            </if>
+            <if test="college!=null and college!=''">
+                AND s.college = #{college}
+            </if>
+            <if test="major!=null and major!=''">
+                AND s.major = #{major}
+            </if>
+            <if test="className!=null and className!=''">
+                AND s.class_name = #{className}
+            </if>
+            <if test="studentId!=null and studentId!=''">
+                AND s.student_id = #{studentId}
+            </if>
+            <if test="timeBegin != null and timeEnd != null">
+                AND c.consumption_time &gt;= #{timeBegin}
+                AND c.consumption_time &lt; DATE_ADD(#{timeEnd}, INTERVAL 1 DAY)
+            </if>
+        </where>
+        GROUP BY DATE(c.consumption_time)
+        ORDER BY consumeDate ASC
+    </select>
+
+    <select id="mealTypeStat" resultType="java.util.Map">
+        SELECT c.meal_type AS mealType, SUM(c.amount) AS totalAmount
+        FROM consumption_data_students_consumption c
+        INNER JOIN basic_data_student s ON c.student_id = s.student_id
+        <where>
+            <if test="grade!=null and grade!=''">
+                AND s.grade = #{grade}
+            </if>
+            <if test="college!=null and college!=''">
+                AND s.college = #{college}
+            </if>
+            <if test="major!=null and major!=''">
+                AND s.major = #{major}
+            </if>
+            <if test="className!=null and className!=''">
+                AND s.class_name = #{className}
+            </if>
+            <if test="studentId!=null and studentId!=''">
+                AND s.student_id = #{studentId}
+            </if>
+            <if test="timeBegin != null and timeEnd != null">
+                AND c.consumption_time &gt;= #{timeBegin}
+                AND c.consumption_time &lt; DATE_ADD(#{timeEnd}, INTERVAL 1 DAY)
+            </if>
+        </where>
+        GROUP BY c.meal_type
+        ORDER BY totalAmount DESC
+    </select>
+
     <select id="consumptionCompareStat" resultType="java.util.Map">
         SELECT
             SUM(c.amount) totalAmount,

@@ -63,8 +63,14 @@ public class StudentConsumptionServiceImpl implements IStudentConsumptionService
     @Override
     public TopWindowStatVO topWindowStat(TimeQuery timeQuery) {
         List<Map<String,Object>> list = studentsMapper.topWindowStat(timeQuery);
-        log.info("topWindowStat: {}", list);
+        log.debug("topWindowStat rows: {}", list == null ? 0 : list.size());
         TopWindowStatVO topWindowStatVO = new TopWindowStatVO();
+        if (list == null || list.isEmpty()) {
+            topWindowStatVO.setWindowNames(List.of());
+            topWindowStatVO.setWindowAmounts(List.of());
+            topWindowStatVO.setWindowPercent(List.of());
+            return topWindowStatVO;
+        }
         double totalAmount = list.stream()
             .map(map -> (BigDecimal) map.get("windowAmount"))
             .filter(Objects::nonNull)
@@ -80,6 +86,16 @@ public class StudentConsumptionServiceImpl implements IStudentConsumptionService
         return topWindowStatVO;
     }
 
+    @Override
+    public List<Map<String, Object>> dailyTrendStat(TimeQuery timeQuery) {
+        return studentsMapper.dailyTrendStat(timeQuery);
+    }
+
+    @Override
+    public List<Map<String, Object>> mealTypeStat(TimeQuery timeQuery) {
+        return studentsMapper.mealTypeStat(timeQuery);
+    }
+
     /**
      * 消费对比统计。
      */
@@ -87,9 +103,8 @@ public class StudentConsumptionServiceImpl implements IStudentConsumptionService
     public ConsumptionCompareVO consumptionCompareStat(TimeQuery timeQuery) {
         Map<String,Object> queryMap = studentsMapper.consumptionCompareStat(timeQuery);
         Map<String,Object> totalMap = studentsMapper.consumptionCompareStat(new TimeQuery(timeQuery.timeBegin,timeQuery.timeEnd));
-        log.info("queryMap:{}",queryMap);
-        log.info("totalMap:{}",totalMap);
-        if(queryMap.get("totalAmount") == null || totalMap.get("totalAmount") == null) {
+        log.debug("consumptionCompareStat queryMap={} totalMap={}", queryMap, totalMap);
+        if(queryMap == null || totalMap == null || queryMap.get("totalAmount") == null || totalMap.get("totalAmount") == null) {
             return null;
         }
         Double totalAmount = ((BigDecimal) totalMap.get("totalAmount")).doubleValue();
@@ -99,6 +114,10 @@ public class StudentConsumptionServiceImpl implements IStudentConsumptionService
         Double apartAmount = ((BigDecimal) queryMap.get("totalAmount")).doubleValue();
         Integer apartRecords = ((Long) queryMap.get("totalRecords")).intValue();
         Integer apartStudents = ((Long) queryMap.get("totalStudents")).intValue();
+
+        if (totalStudents == null || apartStudents == null || totalStudents <= 0 || apartStudents <= 0) {
+            return null;
+        }
 
         return ConsumptionCompareVO
                 .builder()

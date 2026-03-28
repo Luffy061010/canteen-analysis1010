@@ -17,23 +17,20 @@ if not exist "docker-compose.yml" (
 	goto :fail
 )
 
-echo [1/5] Pull images from Docker Hub
-docker compose pull >> "%LOGFILE%" 2>&1
+echo [1/5] Check docker
+docker version >> "%LOGFILE%" 2>&1
 if errorlevel 1 (
-	echo Pull failed, try docker login and retry...
-	echo Pull failed, try docker login and retry... >> "%LOGFILE%"
-	docker login >> "%LOGFILE%" 2>&1
-	if errorlevel 1 goto :fail
-	docker compose pull >> "%LOGFILE%" 2>&1
-	if errorlevel 1 goto :fail
+	echo [ERROR] Docker is not available. Please start Docker Desktop first.
+	echo [ERROR] Docker is not available. >> "%LOGFILE%"
+	goto :fail
 )
 
 echo [2/5] Reset old containers and volumes
 docker compose down -v >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :fail
 
-echo [3/5] Start services
-docker compose up -d >> "%LOGFILE%" 2>&1
+echo [3/5] Build and start services from source
+docker compose up -d --build >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :fail
 
 echo [4/5] Wait MySQL healthy
@@ -44,7 +41,7 @@ docker compose ps >> "%LOGFILE%" 2>&1
 
 echo.
 echo Deployment completed.
-echo MySQL will auto-import SQL from docker/mysql/init on first boot after down -v.
+echo MySQL has auto-imported SQL from docker/mysql/init on first boot after down -v.
 echo Open: http://localhost
 echo Logs: %cd%\%LOGFILE%
 pause

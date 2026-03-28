@@ -23,8 +23,8 @@ echo [4/6] 拉取镜像
 docker compose pull
 if errorlevel 1 exit /b 1
 
-echo [5/6] 启动四容器
-docker compose up -d
+echo [5/6] 启动四容器（前端本地重建）
+docker compose up -d --build
 if errorlevel 1 exit /b 1
 
 echo [6/6] 状态检查

@@ -135,7 +135,7 @@
         <el-col :xs="24" :lg="12">
           <el-card>
             <template #header>
-              <span>日消费趋势</span>
+              <span>日消费变化</span>
             </template>
             <div id="consumptionTrendChart" class="chart" />
           </el-card>
@@ -155,7 +155,13 @@
 
 <script>
 import * as echarts from 'echarts'
-import { getConsumptionTop, getConsumptionGroup, getConsumption, getConsumptionData } from '@/api/user.js'
+import {
+  getConsumptionTop,
+  getConsumption,
+  getConsumptionData,
+  getConsumptionDailyTrend,
+  getConsumptionMealType
+} from '@/api/user.js'
 import { COLLEGES_MAJORS, generateClassNames } from '@/utils/const_value.js'
 import { ElMessage } from 'element-plus'
 
@@ -274,6 +280,71 @@ export default {
       return Number(Number(v || 0).toFixed(2))
     },
 
+    normalizeMealName(raw) {
+      const text = String(raw || '').trim().toLowerCase()
+      if (!text) return '未知'
+      if (['早', '早餐', 'breakfast', 'morning', '1'].includes(text)) return '早餐'
+      if (['中', '午', '午餐', 'lunch', 'noon', '2'].includes(text)) return '午餐'
+      if (['晚', '晚餐', 'dinner', 'evening', '3'].includes(text)) return '晚餐'
+      return String(raw)
+    },
+
+    extractRecords(raw) {
+      const rows = raw?.records || raw?.data?.records || raw?.data || raw || []
+      return Array.isArray(rows) ? rows : []
+    },
+
+    aggregateTrendMealRows(rows = []) {
+      const trendMap = new Map()
+      const mealMap = new Map()
+
+      rows.forEach((row) => {
+        const timeRaw = row.consumptionTime || row.consumption_time || row.consume_time || ''
+        const dateKey = String(timeRaw).split('T')[0].split(' ')[0]
+        const amount = Number(row.amount || row.money || 0)
+        const mealType = this.normalizeMealName(row.mealType || row.meal_type)
+
+        if (dateKey) {
+          trendMap.set(dateKey, (trendMap.get(dateKey) || 0) + amount)
+        }
+        mealMap.set(mealType, (mealMap.get(mealType) || 0) + amount)
+      })
+
+      return {
+        trendData: Array.from(trendMap.entries())
+          .sort((a, b) => a[0].localeCompare(b[0]))
+          .map(([date, value]) => ({ date, value: this.formatNum(value) })),
+        mealTypeData: Array.from(mealMap.entries())
+          .map(([name, value]) => ({ name, value: this.formatNum(value) }))
+          .filter((i) => Number(i.value) > 0)
+      }
+    },
+
+    async buildTrendMealByPagedData(baseParams, firstPageRows = [], firstPageTotal = 0) {
+      const pageSize = 1000
+      const maxPages = Math.max(1, Math.min(60, Math.ceil(Number(firstPageTotal || 0) / pageSize) || 60))
+      let page = 1
+      let hasMore = true
+      const allRows = []
+
+      if (Array.isArray(firstPageRows) && firstPageRows.length) {
+        allRows.push(...firstPageRows)
+        hasMore = firstPageRows.length >= pageSize
+        page = 2
+      }
+
+      while (hasMore && page <= maxPages) {
+        const pageRes = await this.withTimeout(getConsumptionData({ ...baseParams, page, pageSize }), 45000)
+        const rows = this.extractRecords(pageRes)
+        if (!rows.length) break
+        allRows.push(...rows)
+        hasMore = rows.length >= pageSize
+        page += 1
+      }
+
+      return this.aggregateTrendMealRows(allRows)
+    },
+
     buildAggregations(rows) {
       const trendMap = new Map()
       const mealMap = new Map()
@@ -283,7 +354,7 @@ export default {
         const timeRaw = row.consumptionTime || row.consumption_time || row.consume_time || ''
         const dateKey = String(timeRaw).split('T')[0].split(' ')[0]
         const amount = Number(row.amount || row.money || 0)
-        const mealType = row.mealType || row.meal_type || '未知'
+        const mealType = this.normalizeMealName(row.mealType || row.meal_type)
         const windowName = row.window || row.windowId || row.window_id || '未知窗口'
 
         if (dateKey) {
@@ -298,7 +369,7 @@ export default {
         .map(([date, value]) => ({ date, value: this.formatNum(value) }))
 
       this.mealTypeData = Array.from(mealMap.entries()).map(([name, value]) => ({
-        name,
+        name: this.normalizeMealName(name),
         value: this.formatNum(value)
       }))
 
@@ -313,6 +384,12 @@ export default {
     },
 
     normalizeTopData(raw) {
+      if (raw?.windowNames && Array.isArray(raw.windowNames)) {
+        return raw.windowNames.map((name, idx) => ({
+          name,
+          amount: this.formatNum(raw.windowAmounts?.[idx] || 0)
+        }))
+      }
       if (raw?.data?.windowNames && Array.isArray(raw.data.windowNames)) {
         return raw.data.windowNames.map((name, idx) => ({
           name,
@@ -327,9 +404,33 @@ export default {
       }))
     },
 
+    normalizeTrendData(raw) {
+      const rows = Array.isArray(raw) ? raw : (raw?.data || raw?.records || [])
+      if (!Array.isArray(rows)) return []
+      return rows
+        .map((i) => ({
+          date: String(i.consumeDate || i.date || '').split('T')[0],
+          value: this.formatNum(i.totalAmount || i.amount || i.value || 0)
+        }))
+        .filter((i) => i.date)
+        .sort((a, b) => a.date.localeCompare(b.date))
+    },
+
+    normalizeMealTypeData(raw) {
+      const rows = Array.isArray(raw) ? raw : (raw?.data || raw?.records || [])
+      if (!Array.isArray(rows)) return []
+      return rows
+        .map((i) => ({
+          name: this.normalizeMealName(i.mealType || i.meal_type || i.name),
+          value: this.formatNum(i.totalAmount || i.amount || i.value || 0)
+        }))
+        .filter((i) => Number(i.value) > 0)
+    },
+
     renderCharts() {
       const init = (id) => {
-        const el = document.getElementById(id)
+        const root = this.$el && typeof this.$el.querySelector === 'function' ? this.$el : document
+        const el = root.querySelector(`#${id}`)
         if (!el) return null
         const existed = echarts.getInstanceByDom(el)
         const chart = existed || echarts.init(el)
@@ -489,6 +590,10 @@ export default {
         })
       }
       window.addEventListener('resize', this.resizeHandler)
+
+      // 首次渲染后补偿式 resize，避免容器初始宽高尚未稳定导致空白。
+      setTimeout(() => this.resizeHandler && this.resizeHandler(), 0)
+      setTimeout(() => this.resizeHandler && this.resizeHandler(), 220)
     },
 
     async loadData() {
@@ -496,12 +601,12 @@ export default {
       this.loadError = ''
 
       try {
-        const chartParams = this.buildParams(5000)
-        const [statResult, listResult, topResult, groupResult] = await this.withTimeout(Promise.all([
+        const chartParams = this.buildParams(1000)
+        const [statResult, topResult, trendResult, mealResult] = await this.withTimeout(Promise.all([
           getConsumption(chartParams),
-          getConsumptionData(chartParams),
           getConsumptionTop(chartParams),
-          getConsumptionGroup(chartParams)
+          getConsumptionDailyTrend(chartParams).catch(() => null),
+          getConsumptionMealType(chartParams).catch(() => null)
         ])
         , 60000)
 
@@ -513,12 +618,42 @@ export default {
         }
 
         this.topData = this.normalizeTopData(topResult)
-        const grouped = this.normalizeTopData(groupResult)
+        const grouped = this.normalizeTopData(topResult)
         this.groupData = grouped.map((i) => ({ name: i.name, value: i.amount }))
 
-        const rows = listResult?.records || listResult?.data?.records || listResult?.data || []
+        this.trendData = this.normalizeTrendData(trendResult)
+        this.mealTypeData = this.normalizeMealTypeData(mealResult)
+
+        // 首批数据先渲染，提升页面可见速度。
+        this.$nextTick(() => this.renderCharts())
+
+        const needListFallback = !this.topData.length || !this.groupData.length || !this.trendData.length || !this.mealTypeData.length
+        if (!needListFallback) {
+          return
+        }
+
+        const listResult = await this.withTimeout(getConsumptionData(chartParams), 45000)
+
+        const rows = this.extractRecords(listResult)
         const list = Array.isArray(rows) ? rows : []
-        this.buildAggregations(list)
+
+        if (!this.trendData.length || !this.mealTypeData.length) {
+          const localAgg = this.aggregateTrendMealRows(list)
+          if (!this.trendData.length) this.trendData = localAgg.trendData
+          if (!this.mealTypeData.length) this.mealTypeData = localAgg.mealTypeData
+        }
+
+        // 仅在聚合接口不可用且首屏明细不足时，才继续分页补齐。
+        if (!this.trendData.length || !this.mealTypeData.length) {
+          const pagedAgg = await this.buildTrendMealByPagedData(chartParams, list, Number(listResult?.total || 0))
+          if (pagedAgg.trendData.length) this.trendData = pagedAgg.trendData
+          if (pagedAgg.mealTypeData.length) this.mealTypeData = pagedAgg.mealTypeData
+        }
+
+        // 窗口图仍保留明细兜底。
+        if (!this.topData.length || !this.groupData.length) {
+          this.buildAggregations(list)
+        }
 
         this.$nextTick(() => this.renderCharts())
       } catch (error) {

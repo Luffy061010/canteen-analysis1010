@@ -4,7 +4,9 @@ FastAPI 后端入口：用户与权限、日志、数据分析相关接口。
 import json
 import csv
 import io
+import os
 import time
+import logging
 from typing import Optional, Any
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Depends, Query, HTTPException, status, Body
@@ -27,6 +29,7 @@ from utils.llm_explainer import build_custom_explanation
 
 
 app = FastAPI()
+logger = logging.getLogger(__name__)
 
 
 class ExplainBody(BaseModel):
@@ -90,6 +93,13 @@ def admin_required(current_user=Depends(get_current_user)):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="需要管理员权限")
     return current_user
 
+
+def normalize_pagination(page: int, page_size: int, default_size: int = 20, max_size: int = 500):
+    safe_page = max(1, int(page or 1))
+    safe_size = int(page_size or default_size)
+    safe_size = max(1, min(safe_size, max_size))
+    return safe_page, safe_size
+
 # 获取用户列表（仅管理员） 支持分页
 @app.get('/users')
 def get_users(
@@ -99,8 +109,7 @@ def get_users(
     is_admin: Optional[bool] = None,
     current_user=Depends(admin_required)
 ):
-    page = max(1, int(page or 1))
-    page_size = max(1, min(int(page_size or 20), 200))
+    page, page_size = normalize_pagination(page, page_size, default_size=20, max_size=200)
     offset = (page - 1) * page_size
     where_clauses = []
     params = []
@@ -159,8 +168,8 @@ def add_user(user: UserCreate, current_user=Depends(admin_required)):
         'INSERT INTO user (username, password_hash, is_admin, is_active) VALUES (%s, %s, %s, %s)',
         (username, password_hash, bool(user.is_admin), bool(user.is_active))
     )
-    user_id = cursor.lastrowid
     conn.commit()
+    user_id = cursor.lastrowid
     conn.close()
     write_log(current_user["user_id"], current_user["username"], 'add_user', f'添加用户 {username}')
     return {'msg': '添加成功', 'id': user_id}
@@ -335,6 +344,55 @@ def ensure_admin_requests_table():
     conn.close()
 
 
+def ensure_performance_indexes():
+    index_specs = [
+        ("consumption_data_students_consumption", "idx_consumption_student_time", "student_id, consumption_time", False),
+        ("consumption_data_students_consumption", "idx_consumption_time", "consumption_time", False),
+        ("basic_data_student", "idx_student_college", "college", False),
+        ("basic_data_student", "idx_student_major", "major", False),
+        ("basic_data_student", "idx_student_grade", "grade", False),
+        ("basic_data_student", "idx_student_class", "class_name", False),
+        ("basic_data_student", "idx_student_id", "student_id", True),
+    ]
+
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        for table_name, index_name, columns, is_unique in index_specs:
+            cursor.execute(
+                """
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = DATABASE() AND table_name = %s
+                LIMIT 1
+                """,
+                (table_name,)
+            )
+            if not cursor.fetchone():
+                continue
+
+            cursor.execute(
+                """
+                SELECT 1
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE()
+                  AND table_name = %s
+                  AND index_name = %s
+                LIMIT 1
+                """,
+                (table_name, index_name)
+            )
+            if cursor.fetchone():
+                continue
+
+            create_sql = f"CREATE {'UNIQUE ' if is_unique else ''}INDEX {index_name} ON {table_name} ({columns})"
+            cursor.execute(create_sql)
+
+        conn.commit()
+    finally:
+        conn.close()
+
+
 @app.post('/admin/apply')
 def apply_admin(reason: Optional[str] = Body(None, embed=True), current_user=Depends(get_current_user)):
     # 普通登录用户提交管理员申请
@@ -361,6 +419,7 @@ def apply_admin(reason: Optional[str] = Body(None, embed=True), current_user=Dep
 @app.get('/admin/applications')
 def list_admin_applications(page: int = 1, page_size: int = 20, current_user=Depends(admin_required)):
     ensure_admin_requests_table()
+    page, page_size = normalize_pagination(page, page_size, default_size=20, max_size=200)
     offset = (page - 1) * page_size
     conn = get_db()
     cursor = conn.cursor()
@@ -403,8 +462,7 @@ def approve_admin_application(app_id: int, current_user=Depends(admin_required))
 # 日志查询接口（支持分页）
 @app.get('/logs')
 def get_logs(page: int = 1, page_size: int = 50, current_user=Depends(get_current_user), user_id: int = None):
-    page = max(1, int(page))
-    page_size = max(1, min(int(page_size), 500))
+    page, page_size = normalize_pagination(page, page_size, default_size=50, max_size=500)
     offset = (page - 1) * page_size
     conn = get_db()
     cursor = conn.cursor()
@@ -465,10 +523,9 @@ def export_logs(
 
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute(
-        f'SELECT id, user_id, username, action, detail, created_at FROM log{where_sql} ORDER BY created_at DESC',
-        params
-    )
+    cursor.execute(f'SELECT id, user_id, username, action, detail, created_at FROM log{where_sql} ORDER BY created_at DESC', params)
+    rows = cursor.fetchall()
+    conn.close()
 
     def excel_text(val, force_text=False):
         if val is None:
@@ -479,35 +536,28 @@ def export_logs(
         return text
 
     def gen():
-        try:
-            yield '\ufeff'
-            output = io.StringIO()
-            writer = csv.writer(output)
-            writer.writerow(['id', 'user_id', 'username', 'action', 'detail', 'created_at'])
+        yield '\ufeff'
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['id', 'user_id', 'username', 'action', 'detail', 'created_at'])
+        yield output.getvalue()
+        output.seek(0)
+        output.truncate(0)
+
+        for r in rows:
+            created = r[5].strftime('%Y-%m-%d %H:%M:%S') if r[5] else ''
+            detail = (r[4] or '').replace('\n', ' ').replace('\r', ' ')
+            writer.writerow([
+                excel_text(r[0]),
+                excel_text(r[1]),
+                excel_text(r[2], force_text=True),
+                r[3] or '',
+                detail,
+                excel_text(created, force_text=True)
+            ])
             yield output.getvalue()
             output.seek(0)
             output.truncate(0)
-
-            while True:
-                rows = cursor.fetchmany(1000)
-                if not rows:
-                    break
-                for r in rows:
-                    created = r[5].strftime('%Y-%m-%d %H:%M:%S') if r[5] else ''
-                    detail = (r[4] or '').replace('\n', ' ').replace('\r', ' ')
-                    writer.writerow([
-                        excel_text(r[0]),
-                        excel_text(r[1]),
-                        excel_text(r[2], force_text=True),
-                        r[3] or '',
-                        detail,
-                        excel_text(created, force_text=True)
-                    ])
-                    yield output.getvalue()
-                    output.seek(0)
-                    output.truncate(0)
-        finally:
-            conn.close()
 
     headers = {
         'Content-Disposition': f'attachment; filename=logs_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
@@ -520,8 +570,7 @@ def export_logs(
 def search_logs(username: Optional[str] = None, action: Optional[str] = None,
                 start_date: Optional[str] = None, end_date: Optional[str] = None,
                 page: int = 1, page_size: int = 50, current_user=Depends(get_current_user)):
-    page = max(1, int(page))
-    page_size = max(1, min(int(page_size), 500))
+    page, page_size = normalize_pagination(page, page_size, default_size=50, max_size=500)
     offset = (page - 1) * page_size
     where_clauses = []
     params = []
@@ -608,11 +657,11 @@ def wait_for_db_ready(max_retries: int = 60, interval_seconds: int = 2):
         try:
             conn = get_db()
             conn.close()
-            print(f"[startup] mysql is ready (attempt {i}/{max_retries})")
+            logger.info("[startup] mysql is ready (attempt %s/%s)", i, max_retries)
             return
         except Exception as e:
             last_error = e
-            print(f"[startup] waiting mysql ({i}/{max_retries}): {e}")
+            logger.warning("[startup] waiting mysql (%s/%s): %s", i, max_retries, e)
             time.sleep(interval_seconds)
     raise RuntimeError(f"mysql not ready after retries: {last_error}")
 
@@ -645,9 +694,10 @@ def bootstrap_security_defaults():
         wait_for_db_ready(max_retries=90, interval_seconds=2)
         ensure_default_admin_account()
         ensure_admin_requests_table()
+        ensure_performance_indexes()
     except Exception as e:
         # 不阻断服务启动，避免因数据库就绪时序导致整个容器退出
-        print(f"[startup] bootstrap security defaults skipped: {e}")
+        logger.warning("[startup] bootstrap security defaults skipped: %s", e)
 
 def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()
@@ -733,9 +783,17 @@ def login(user: UserLogin):
     return {"access_token": token, "token_type": "bearer", "token": token, "user": user_obj}
 
 # 添加CORS配置解决跨域问题
+cors_env = os.getenv("CORS_ALLOW_ORIGINS", "")
+cors_origins = [o.strip() for o in cors_env.split(",") if o.strip()] if cors_env else [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -744,7 +802,7 @@ app.add_middleware(
 
 @app.get("/analysis/cluster")
 def analysis_cluster(cluster_body: ClusterBody = Depends()):
-    print(cluster_body)
+    logger.debug("analysis_cluster request: %s", cluster_body)
     # 版本号防止旧缓存（字段不全）命中
     key = "api:cluster:v7:" + cluster_body.model_dump_json()
     val = r.get_key(key)
@@ -752,7 +810,7 @@ def analysis_cluster(cluster_body: ClusterBody = Depends()):
         return json.loads(val)
 
     res = analysis_service.analysis_cluster(cluster_body)
-    r.set_key(key, json.dumps(res), ex=600)
+    r.set_key(key, json.dumps(res))
     return res
 
 
@@ -777,9 +835,10 @@ def analysis_cluster_details(
     except ValueError:
         raise HTTPException(status_code=400, detail="timeBegin/timeEnd 日期格式错误，需 YYYY-MM-DD")
 
-    ids_raw = ",".join(ids)
+    ids_for_cache = sorted(set(ids))
+    ids_raw = ",".join(ids_for_cache)
     ids_digest = hashlib.md5(ids_raw.encode("utf-8")).hexdigest()
-    cache_key = f"api:cluster:details:v2:{ids_digest}:{timeBegin or ''}:{timeEnd or ''}:{int(includeLlm)}"
+    cache_key = f"api:cluster:details:v3:{ids_digest}:{timeBegin or ''}:{timeEnd or ''}:{int(includeLlm)}"
     val = r.get_key(cache_key)
     if val:
         return json.loads(val)
@@ -792,7 +851,7 @@ def analysis_cluster_details(
 
 @app.get("/analysis/drift")
 def analysis_drift(drift_body: DriftBody = Depends()):
-    print(drift_body)
+    logger.debug("analysis_drift request: %s", drift_body)
     # 版本号防止旧缓存命中（窗口推进逻辑变更）
     key = "api:drift:v7:" + drift_body.model_dump_json()
     val = r.get_key(key)
@@ -800,20 +859,36 @@ def analysis_drift(drift_body: DriftBody = Depends()):
         return json.loads(val)
 
     res = analysis_service.analysis_drift(drift_body)
-    r.set_key(key, json.dumps(res), ex=600)
+    r.set_key(key, json.dumps(res))
     return res
 
 
 @app.get("/analysis/correlation")
 def analysis_correlation(correlation_body: CorrelationBody = Depends()):
-    print(correlation_body)
+    logger.debug("analysis_correlation request: %s", correlation_body)
     key = "api:correlation:v6:" + correlation_body.model_dump_json()
     val = r.get_key(key)
     if val:
         return json.loads(val)
 
     res = analysis_service.analysis_correlation(correlation_body)
-    r.set_key(key, json.dumps(res), ex=600)
+    r.set_key(key, json.dumps(res))
+    return res
+
+
+@app.get("/analysis/dashboard/overview")
+def dashboard_overview(base_body: BaseBody = Depends()):
+    key = "api:dashboard:overview:v1:" + base_body.model_dump_json()
+    val = r.get_key(key)
+    if val:
+        return json.loads(val)
+
+    try:
+        res = analysis_service.get_dashboard_overview(base_body)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"dashboard overview failed: {e}")
+
+    r.set_key(key, json.dumps(res), ex=180)
     return res
 
 
@@ -984,7 +1059,7 @@ def get_summary_data(
     """
     接受查询参数而不是请求体
     """
-    print(f"接收到的参数: college={college}, start_date={start_date}, end_date={end_date}")
+    logger.debug("summary params: college=%s start_date=%s end_date=%s", college, start_date, end_date)
 
     # 处理日期转换
     start_date_parsed = None
@@ -1010,7 +1085,7 @@ def get_summary_data(
             end_date=end_date_parsed
         )
     except Exception as e:
-        print(f"创建BaseBody错误: {e}")
+        logger.exception("创建BaseBody错误")
         return {"error": f"参数处理失败: {str(e)}"}
 
     # 继续原有逻辑
@@ -1024,59 +1099,11 @@ def get_summary_data(
         df.reset_index(inplace=True)
         df = df.rename(columns={'index': 'student_id'})
 
-        r.set_key(key, json.dumps(df.to_dict(orient="records")), ex=600)
+        r.set_key(key, json.dumps(df.to_dict(orient="records")))
         return df.to_dict(orient="records")
     except Exception as e:
-        print(f"数据处理错误: {e}")
+        logger.exception("数据处理错误")
         return {"error": f"数据处理失败: {str(e)}"}
-
-
-@app.get("/analysis/dashboard/overview")
-def get_dashboard_overview(
-        college: Optional[str] = Query(None, description="学院"),
-        major: Optional[str] = Query(None, description="专业"),
-        grade: Optional[str] = Query(None, description="年级"),
-        className: Optional[str] = Query(None, description="班级"),
-        studentId: Optional[str] = Query(None, description="学号"),
-        timeBegin: Optional[str] = Query(None, description="开始日期 YYYY-MM-DD"),
-        timeEnd: Optional[str] = Query(None, description="结束日期 YYYY-MM-DD"),
-        start_date: Optional[str] = Query(None, description="开始日期 YYYY-MM-DD"),
-        end_date: Optional[str] = Query(None, description="结束日期 YYYY-MM-DD")
-):
-    begin_raw = timeBegin or start_date
-    end_raw = timeEnd or end_date
-
-    begin_date = None
-    end_date_obj = None
-    if begin_raw:
-        try:
-            begin_date = datetime.strptime(begin_raw, "%Y-%m-%d").date()
-        except ValueError:
-            raise HTTPException(status_code=400, detail="timeBegin/start_date 格式错误，需 YYYY-MM-DD")
-    if end_raw:
-        try:
-            end_date_obj = datetime.strptime(end_raw, "%Y-%m-%d").date()
-        except ValueError:
-            raise HTTPException(status_code=400, detail="timeEnd/end_date 格式错误，需 YYYY-MM-DD")
-
-    body = BaseBody(
-        college=college,
-        major=major,
-        grade=grade,
-        className=className,
-        studentId=studentId,
-        timeBegin=begin_date,
-        timeEnd=end_date_obj,
-    )
-
-    key = "api:dashboard:overview:v1:" + body.model_dump_json()
-    val = r.get_key(key)
-    if val:
-        return json.loads(val)
-
-    res = analysis_service.get_dashboard_overview(body)
-    r.set_key(key, json.dumps(res), ex=300)
-    return res
 
 
 @app.get("/")
@@ -1138,56 +1165,59 @@ def consumption_query(
         include_raw = True
 
     if include_raw:
+        page, page_size = normalize_pagination(page, page_size, default_size=100, max_size=1000)
         conn = pymysql.connect(**mysql.DBCONFIG)
-        cur = conn.cursor()
-        where = 'WHERE student_id=%s'
-        params = [studentId]
-        if sd and ed:
-            where += ' AND consumption_time BETWEEN %s AND %s'
-            params.extend([sd, ed])
-
-        # count
-        cur.execute(f"SELECT COUNT(*) FROM consumption_data_students_consumption {where}", tuple(params))
-        total = cur.fetchone()[0]
-
-        offset = (page - 1) * page_size
-        cur.execute(
-            f"SELECT id, student_id, consumption_time, amount, meal_type FROM consumption_data_students_consumption {where} ORDER BY consumption_time DESC LIMIT %s OFFSET %s",
-            tuple(params + [page_size, offset])
-        )
-        rows = cur.fetchall()
-        cur.close()
-        conn.close()
-
-        raw_records = [
-            {"id": r[0], "studentId": r[1], "consumption_time": r[2].isoformat() if hasattr(r[2], 'isoformat') else str(r[2]), "amount": float(r[3]), "meal_type": r[4]} for r in rows
-        ]
-        result['raw'] = {'total': int(total), 'page': page, 'page_size': page_size, 'items': raw_records}
-
-        # 额外返回近期趋势（过去 14 天的日消费序列）以供个人页面展示
         try:
-            today = datetime.utcnow().date()
-            window_days = 14
-            start_recent = today - timedelta(days=window_days - 1)
             cur = conn.cursor()
-            cur.execute(
-                "SELECT DATE(consumption_time) d, SUM(amount) t FROM consumption_data_students_consumption WHERE student_id=%s AND consumption_time BETWEEN %s AND %s GROUP BY DATE(consumption_time) ORDER BY d",
-                (studentId, start_recent, today)
-            )
-            rows2 = cur.fetchall()
-            recent_map = {r[0].isoformat(): float(r[1]) for r in rows2}
-            dates = [(start_recent + timedelta(days=i)).isoformat() for i in range(window_days)]
-            series = [round(recent_map.get(d, 0.0), 2) for d in dates]
-            # 移动平均（窗口3）
-            ma = []
-            w = 3
-            for i in range(len(series)):
-                seg = series[max(0, i - w + 1):i + 1]
-                ma.append(round(sum(seg) / len(seg), 2) if seg else 0.0)
+            where = 'WHERE student_id=%s'
+            params = [studentId]
+            if sd and ed:
+                where += ' AND consumption_time BETWEEN %s AND %s'
+                params.extend([sd, ed])
 
-            result['recent'] = {'dates': dates, 'series': series, 'moving_average': ma}
-        except Exception:
-            pass
+            # count
+            cur.execute(f"SELECT COUNT(*) FROM consumption_data_students_consumption {where}", tuple(params))
+            total = cur.fetchone()[0]
+
+            offset = (page - 1) * page_size
+            cur.execute(
+                f"SELECT id, student_id, consumption_time, amount, meal_type FROM consumption_data_students_consumption {where} ORDER BY consumption_time DESC LIMIT %s OFFSET %s",
+                tuple(params + [page_size, offset])
+            )
+            rows = cur.fetchall()
+
+            raw_records = [
+                {"id": r[0], "studentId": r[1], "consumption_time": r[2].isoformat() if hasattr(r[2], 'isoformat') else str(r[2]), "amount": float(r[3]), "meal_type": r[4]} for r in rows
+            ]
+            result['raw'] = {'total': int(total), 'page': page, 'page_size': page_size, 'items': raw_records}
+
+            # 额外返回近期趋势（过去 14 天的日消费序列）以供个人页面展示
+            try:
+                today = datetime.utcnow().date()
+                window_days = 14
+                start_recent = today - timedelta(days=window_days - 1)
+                cur.execute(
+                    "SELECT DATE(consumption_time) d, SUM(amount) t FROM consumption_data_students_consumption WHERE student_id=%s AND consumption_time BETWEEN %s AND %s GROUP BY DATE(consumption_time) ORDER BY d",
+                    (studentId, start_recent, today)
+                )
+                rows2 = cur.fetchall()
+                recent_map = {r[0].isoformat(): float(r[1]) for r in rows2}
+                dates = [(start_recent + timedelta(days=i)).isoformat() for i in range(window_days)]
+                series = [round(recent_map.get(d, 0.0), 2) for d in dates]
+                # 移动平均（窗口3）
+                ma = []
+                w = 3
+                for i in range(len(series)):
+                    seg = series[max(0, i - w + 1):i + 1]
+                    ma.append(round(sum(seg) / len(seg), 2) if seg else 0.0)
+
+                result['recent'] = {'dates': dates, 'series': series, 'moving_average': ma}
+            except Exception:
+                pass
+            finally:
+                cur.close()
+        finally:
+            conn.close()
 
     return result
 

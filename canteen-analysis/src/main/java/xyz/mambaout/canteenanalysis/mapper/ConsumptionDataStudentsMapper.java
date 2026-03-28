@@ -18,5 +18,9 @@ public interface ConsumptionDataStudentsMapper {
     @MapKey("")
     List<Map<String, Object>> topWindowStat(TimeQuery timeQuery);
 
+    List<Map<String, Object>> dailyTrendStat(TimeQuery timeQuery);
+
+    List<Map<String, Object>> mealTypeStat(TimeQuery timeQuery);
+
     Map<String, Object> consumptionCompareStat(TimeQuery timeQuery);
 }

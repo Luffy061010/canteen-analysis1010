@@ -33,7 +33,7 @@ mybatis:
 logging:
   level:
     root: info
-    xyz.mambaout.canteenanalysis.mapper: DEBUG
+    xyz.mambaout.canteenanalysis.mapper: info
 
 fastapi:
   base-url: ${FASTAPI_BASE_URL:http://127.0.0.1:8000}

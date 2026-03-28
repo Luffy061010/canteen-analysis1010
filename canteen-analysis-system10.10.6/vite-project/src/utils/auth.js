@@ -1,6 +1,7 @@
 const TOKEN_KEY = 'token'
 const USER_INFO_KEY = 'userInfo'
 const USER_ID_KEY = 'userId'
+const BOOT_LOGIN_PASSED_KEY = 'bootLoginPassed'
 
 export const getAuthToken = () => {
   return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY) || ''
@@ -64,4 +65,16 @@ export const setStoredUserId = (userId, remember = true) => {
 export const clearStoredUserId = () => {
   localStorage.removeItem(USER_ID_KEY)
   sessionStorage.removeItem(USER_ID_KEY)
+}
+
+export const markBootLoginPassed = () => {
+  sessionStorage.setItem(BOOT_LOGIN_PASSED_KEY, '1')
+}
+
+export const hasBootLoginPassed = () => {
+  return sessionStorage.getItem(BOOT_LOGIN_PASSED_KEY) === '1'
+}
+
+export const resetBootLoginPassed = () => {
+  sessionStorage.removeItem(BOOT_LOGIN_PASSED_KEY)
 }

@@ -1,10 +1,9 @@
-# 四容器 Docker 部署说明
+# 三容器 Docker 部署说明
 
-本方案固定为 4 个容器：
+本方案固定为 3 个容器：
 
 - `frontend`：Nginx + Vue 前端
-- `java`：Spring Boot
-- `python`：FastAPI
+- `backend`：Spring Boot + FastAPI（同一容器内双进程）
 - `mysql`：MySQL 8.0
 
 ## 1. 导出你本机的 `back_end` 数据库
@@ -38,6 +37,7 @@ MySQL 容器首次启动时会自动执行 `docker/mysql/init/*.sql`：
 1. `001_init_schema.sql`：基础表和默认管理员
 2. `002_business_schema_min.sql`：占位文件（真实业务结构在 003）
 3. `003_back_end_data.sql`：你导出的真实业务结构与数据
+4. `004_add_indexes.sql`：查询性能索引（幂等，可重复执行）
 
 > 注意：只有在 `mysql_data` 卷为空时才会执行初始化 SQL。
 

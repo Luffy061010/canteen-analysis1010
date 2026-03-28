@@ -1,0 +1,40 @@
+FROM maven:3.9.9-eclipse-temurin-17 AS java-builder
+WORKDIR /build/java
+
+COPY canteen-analysis/pom.xml ./pom.xml
+COPY canteen-analysis/src ./src
+COPY docker/backend/maven-settings.xml /root/.m2/settings.xml
+RUN set -eux; \
+    for i in 1 2 3; do \
+      mvn -s /root/.m2/settings.xml -B -DskipTests clean package && break; \
+      echo "maven build failed, retrying in 10s... ($i/3)"; \
+      sleep 10; \
+    done
+
+FROM python:3.11-slim
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV TZ=Asia/Shanghai
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openjdk-17-jre-headless \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY canteen-analysis-python/requirements.txt /app/python/requirements.txt
+RUN python -m pip install --upgrade pip && \
+    python -m pip install --no-cache-dir -r /app/python/requirements.txt
+
+COPY canteen-analysis-python /app/python
+COPY --from=java-builder /build/java/target/canteen-analysis-0.0.1-SNAPSHOT.jar /app/java/canteen-analysis.jar
+COPY docker/backend/start-backend.sh /app/start-backend.sh
+
+RUN chmod +x /app/start-backend.sh
+
+EXPOSE 8000 8080
+
+CMD ["/app/start-backend.sh"]

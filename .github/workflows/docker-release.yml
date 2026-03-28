@@ -1,0 +1,158 @@
+name: Docker Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Docker image tag, for example v1.0.0"
+        required: true
+        default: "v1.0.0"
+      push_latest:
+        description: "Also push latest tag"
+        required: true
+        type: boolean
+        default: false
+      no_cache:
+        description: "Build without cache"
+        required: true
+        type: boolean
+        default: false
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: docker-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.vars.outputs.version }}
+      push_latest: ${{ steps.vars.outputs.push_latest }}
+      no_cache: ${{ steps.vars.outputs.no_cache }}
+    steps:
+      - id: vars
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "push_latest=${{ inputs.push_latest }}" >> "$GITHUB_OUTPUT"
+            echo "no_cache=${{ inputs.no_cache }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "push_latest=false" >> "$GITHUB_OUTPUT"
+            echo "no_cache=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-and-push:
+    runs-on: ubuntu-latest
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: frontend
+            dockerfile: docker/frontend/Dockerfile
+            repo: 1010-frontend
+          - name: python
+            dockerfile: docker/python/Dockerfile
+            repo: 1010-python
+          - name: java
+            dockerfile: docker/backend/Dockerfile
+            repo: 1010-java
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Resolve namespace
+        id: ns
+        shell: bash
+        env:
+          DOCKERHUB_NAMESPACE: ${{ secrets.DOCKERHUB_NAMESPACE }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          if [ -n "$DOCKERHUB_NAMESPACE" ]; then
+            echo "value=$DOCKERHUB_NAMESPACE" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=$DOCKERHUB_USERNAME" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Prepare tags
+        id: tags
+        shell: bash
+        run: |
+          IMAGE="${{ steps.ns.outputs.value }}/${{ matrix.repo }}"
+          VERSION="${{ needs.prepare.outputs.version }}"
+
+          if [ "${{ needs.prepare.outputs.push_latest }}" = "true" ]; then
+            {
+              echo "value<<EOF"
+              echo "$IMAGE:$VERSION"
+              echo "$IMAGE:latest"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "value=$IMAGE:$VERSION" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push ${{ matrix.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          no-cache: ${{ needs.prepare.outputs.no_cache == 'true' }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          tags: ${{ steps.tags.outputs.value }}
+
+  verify:
+    runs-on: ubuntu-latest
+    needs: [prepare, build-and-push]
+    steps:
+      - name: Verify tags in Docker Hub
+        shell: bash
+        env:
+          DOCKERHUB_NAMESPACE: ${{ secrets.DOCKERHUB_NAMESPACE }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PUSH_LATEST: ${{ needs.prepare.outputs.push_latest }}
+        run: |
+          if [ -n "$DOCKERHUB_NAMESPACE" ]; then
+            NS="$DOCKERHUB_NAMESPACE"
+          else
+            NS="$DOCKERHUB_USERNAME"
+          fi
+
+          for repo in 1010-frontend 1010-python 1010-java; do
+            code=$(curl -s -o /tmp/tag.json -w "%{http_code}" "https://hub.docker.com/v2/repositories/$NS/$repo/tags/$VERSION")
+            if [ "$code" != "200" ]; then
+              echo "Tag verify failed: $NS/$repo:$VERSION"
+              cat /tmp/tag.json
+              exit 1
+            fi
+          done
+
+          if [ "$PUSH_LATEST" = "true" ]; then
+            for repo in 1010-frontend 1010-python 1010-java; do
+              code=$(curl -s -o /tmp/tag.json -w "%{http_code}" "https://hub.docker.com/v2/repositories/$NS/$repo/tags/latest")
+              if [ "$code" != "200" ]; then
+                echo "Tag verify failed: $NS/$repo:latest"
+                cat /tmp/tag.json
+                exit 1
+              fi
+            done
+          fi
+
+          echo "All tags verified successfully."

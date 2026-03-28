@@ -4,11 +4,16 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import router from "../router/index"
 import { clearAuthToken, clearStoredUserInfo, getAuthToken, getStoredUserInfo } from "./auth"
 
+const parsedTimeout = Number(import.meta.env.VITE_REQUEST_TIMEOUT ?? 60000)
+const REQUEST_TIMEOUT = Number.isFinite(parsedTimeout) && parsedTimeout >= 3000 ? parsedTimeout : 60000
+
 // 后端 Java 服务默认走 /api 代理
 const request = axios.create({
     baseURL: "/api",
-    timeout: 600000,
+    timeout: REQUEST_TIMEOUT,
 });
+
+let unauthorizedPrompting = false
 
 // 请求拦截器
 request.interceptors.request.use(
@@ -55,35 +60,47 @@ request.interceptors.response.use(
         return res.data !== undefined ? res.data : res;
     },
     (error) => {
-        console.error('响应拦截器错误:', error)
+        const status = error?.response?.status
+        const silent404 = status === 404 && error?.config?.silent404 === true
+
+        if (!silent404) {
+            console.error('响应拦截器错误:', error)
+        }
         
         if (error.response) {
             const { status, data } = error.response;
             
             switch (status) {
                 case 401:
-                    ElMessageBox.confirm(
-                        '登录已过期，请重新登录',
-                        '提示',
-                        {
-                            confirmButtonText: '确定',
-                            cancelButtonText: '取消',
-                            type: 'warning',
-                        }
-                    ).then(() => {
-                        // 清除本地存储
-                        clearAuthToken()
-                        clearStoredUserInfo()
-                        // 跳转到登录页
-                        const redirect = router.currentRoute?.value?.fullPath || '/'
-                        router.replace({ path: '/login', query: { redirect } })
-                    })
+                    if (!unauthorizedPrompting) {
+                        unauthorizedPrompting = true
+                        ElMessageBox.confirm(
+                            '登录已过期，请重新登录',
+                            '提示',
+                            {
+                                confirmButtonText: '确定',
+                                cancelButtonText: '取消',
+                                type: 'warning',
+                            }
+                        ).finally(() => {
+                            // 清除本地存储
+                            clearAuthToken()
+                            clearStoredUserInfo()
+                            // 跳转到登录页
+                            const redirect = router.currentRoute?.value?.fullPath || '/'
+                            router.replace({ path: '/login', query: { redirect } }).finally(() => {
+                                unauthorizedPrompting = false
+                            })
+                        })
+                    }
                     break;
                 case 403:
                     ElMessage.error(data?.message || '没有权限访问该资源')
                     break;
                 case 404:
-                    ElMessage.error(data?.message || '请求的资源不存在')
+                    if (!silent404) {
+                        ElMessage.error(data?.message || '请求的资源不存在')
+                    }
                     break;
                 case 422:
                     ElMessage.error(data?.message || '请求参数验证失败')

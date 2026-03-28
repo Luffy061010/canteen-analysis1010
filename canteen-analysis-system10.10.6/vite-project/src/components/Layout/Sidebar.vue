@@ -12,7 +12,7 @@
     >
       <template v-if="isAdmin">
         <!-- 首页 -->
-        <el-menu-item index="/">
+        <el-menu-item index="/dashboard">
           <el-icon><House /></el-icon>
           <span>首页</span>
         </el-menu-item>

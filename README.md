@@ -1,49 +1,52 @@
-# 校园食堂消费分析系统（Docker 部署）
+# 校园食堂消费分析系统（Windows + Docker 源码部署）
 
-本项目固定为 4 个容器：
+本项目默认使用 3 个容器：
 
 - `frontend`：Vue + Nginx
-- `python`：FastAPI
-- `java`：Spring Boot
+- `backend`：Java(Spring Boot) + FastAPI（合并在一个容器）
 - `mysql`：MySQL 8.0
 
-镜像版本固定为 `v1.0.0`，数据库数据来自仓库内 `docker/mysql/init/003_back_end_data.sql`，首次部署会自动导入。
+别人不需要你手工发安装包。只要能访问你的 GitHub 仓库，就可以在自己的 Windows 电脑上从源码构建并部署。
 
-## 1. 你发布系统（上传到 Docker Hub）
+## 1. 目标机器前置条件
 
-在项目根目录执行：
+- Windows 10/11
+- Docker Desktop（已启动）
+- Git
 
-- `release.cmd`
+## 2. 首次部署（对方机器执行）
 
-会构建并推送以下镜像：
-
-- `lln1010/1010-frontend:v1.0.0`
-- `lln1010/1010-python:v1.0.0`
-- `lln1010/1010-java:v1.0.0`
-
-## 2. 他人命令行部署（无需你额外传数据库文件）
-
-```bash
+```bat
 git clone <你的仓库地址>
 cd <仓库目录>
-docker compose pull
-docker compose up -d
+deploy.cmd
 ```
 
-访问：`http://localhost`
+说明：
 
-## 3. 数据库导入说明
+- `deploy.cmd` 会自动执行 `docker compose down -v` 后再 `docker compose up -d --build`
+- 会从源码构建前端和后端镜像
+- MySQL 在首次启动（空卷）时自动导入 `docker/mysql/init/*.sql`
 
-- MySQL 在 `docker compose up -d` 的首次初始化（空卷）时，会自动执行 `docker/mysql/init/*.sql`
-- 如需重新导入数据：
+访问地址：`http://localhost`
 
-```bash
+## 3. 数据库初始化与重置
+
+- 首次部署自动导入：
+  - `docker/mysql/init/001_init_schema.sql`
+  - `docker/mysql/init/002_business_schema_min.sql`
+  - `docker/mysql/init/003_back_end_data.sql`
+  - `docker/mysql/init/004_add_indexes.sql`
+- 需要重置并重新导入：
+
+```bat
 docker compose down -v
-docker compose up -d
+docker compose up -d --build
 ```
 
 ## 4. 常用命令
 
 - 查看状态：`docker compose ps`
 - 查看日志：`docker compose logs -f`
-- 更新版本（同标签重拉）：`docker compose pull && docker compose up -d`
+- 后端日志：`docker compose logs -f backend`
+- MySQL 日志：`docker compose logs -f mysql`

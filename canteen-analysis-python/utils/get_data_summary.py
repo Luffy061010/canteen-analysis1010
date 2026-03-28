@@ -1,6 +1,7 @@
 """
 数据汇总工具：从原始消费记录生成按学生/时间维度的统计特征。
 """
+import json
 from schemas.form_dto import BaseBody,CorrelationBody
 import pymysql
 from config import mysql
@@ -10,6 +11,30 @@ from utils import redis_utils as r
 
 def get_data_summary(base_body:BaseBody) -> pd.DataFrame:
     """查询消费明细并聚合为日均消费/次数特征。"""
+
+    cache_key = None
+    try:
+        cache_key = "api:data_summary:v1:" + base_body.model_dump_json()
+        cached = r.get_key(cache_key)
+        if cached:
+            payload = json.loads(cached)
+            rows = payload.get("rows", [])
+            if rows:
+                cache_df = pd.DataFrame(rows)
+                if "student_id" in cache_df.columns:
+                    cache_df.set_index("student_id", inplace=True)
+                ordered_cols = [
+                    "breakfast_avg_count", "breakfast_avg_amount",
+                    "lunch_avg_count", "lunch_avg_amount",
+                    "dinner_avg_count", "dinner_avg_amount"
+                ]
+                for col in ordered_cols:
+                    if col not in cache_df.columns:
+                        cache_df[col] = 0.0
+                return cache_df[ordered_cols].astype(float).round(2)
+    except Exception:
+        # 缓存异常不影响主流程
+        pass
 
     connection = pymysql.connect(**mysql.DBCONFIG)
     cursor = connection.cursor()
@@ -95,6 +120,14 @@ def get_data_summary(base_body:BaseBody) -> pd.DataFrame:
 
     res_df.fillna(0, inplace=True)
     res_df = res_df.astype(float).round(2)
+
+    if cache_key:
+        try:
+            cache_rows = res_df.reset_index().rename(columns={"index": "student_id"}).to_dict(orient="records")
+            r.set_key(cache_key, json.dumps({"rows": cache_rows}, ensure_ascii=False), ex=120)
+        except Exception:
+            pass
+
     return res_df
 
 def get_data_summary_gpa(correlation_body:CorrelationBody) -> list[pd.DataFrame]:
@@ -174,28 +207,32 @@ def summary(df:pd.DataFrame,base_body:BaseBody):
     if df is None or df.empty:
         return pd.DataFrame(columns=empty_cols)
 
-    middle_res_dict = {}
-    for index, row in df.iterrows():
-        student_id = row.get("student_id")
-        if student_id not in middle_res_dict:
-            middle_res_dict[student_id] = {
-                "breakfast_count": 0,
-                "breakfast_amount": 0,
-                "lunch_count": 0,
-                "lunch_amount": 0,
-                "dinner_count": 0,
-                "dinner_amount": 0,
-            }
-        if row.get("meal_type") == "早":
-            middle_res_dict[student_id]["breakfast_count"] += 1
-            middle_res_dict[student_id]["breakfast_amount"] += row.get("amount")
-        elif row.get("meal_type") == "中":
-            middle_res_dict[student_id]["lunch_count"] += 1
-            middle_res_dict[student_id]["lunch_amount"] += row.get("amount")
-        elif row.get("meal_type") == "晚":
-            middle_res_dict[student_id]["dinner_count"] += 1
-            middle_res_dict[student_id]["dinner_amount"] += row.get("amount")
-    middle_df = pd.DataFrame(data=middle_res_dict).T
+    work = df[["student_id", "meal_type", "amount"]].copy()
+    work = work[work["meal_type"].isin(["早", "中", "晚"])]
+    work["amount"] = pd.to_numeric(work["amount"], errors="coerce").fillna(0.0)
+
+    if work.empty:
+        return pd.DataFrame(index=pd.Index([], name="student_id"), columns=empty_cols, dtype=float)
+
+    count_pivot = (
+        work.groupby(["student_id", "meal_type"]) 
+            .size()
+            .unstack(fill_value=0)
+    )
+    amount_pivot = (
+        work.groupby(["student_id", "meal_type"])["amount"]
+            .sum()
+            .unstack(fill_value=0.0)
+    )
+
+    middle_df = pd.DataFrame(index=count_pivot.index)
+    middle_df["breakfast_count"] = count_pivot.get("早", 0)
+    middle_df["breakfast_amount"] = amount_pivot.get("早", 0.0)
+    middle_df["lunch_count"] = count_pivot.get("中", 0)
+    middle_df["lunch_amount"] = amount_pivot.get("中", 0.0)
+    middle_df["dinner_count"] = count_pivot.get("晚", 0)
+    middle_df["dinner_amount"] = amount_pivot.get("晚", 0.0)
+
     # 早中晚平均金额等于 对应总金额除以总次数  日均次数 次均金额 等于 全部次数除以日期 /全部金额 除以 次数
     duration = (base_body.timeEnd - base_body.timeBegin).days if base_body.timeEnd and base_body.timeBegin else 0
     if duration <= 0:

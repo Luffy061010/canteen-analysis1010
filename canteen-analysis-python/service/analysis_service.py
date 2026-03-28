@@ -15,6 +15,8 @@ import pymysql
 from config import mysql
 import numpy as np
 
+_STUDENT_GENDER_COL_CACHE = None
+
 
 def _safe_number(value, default=0.0):
     try:
@@ -47,6 +49,23 @@ def _build_filter_sql(base_body):
         params.append(base_body.studentId)
 
     return " AND ".join(where_parts), params
+
+
+def _resolve_student_gender_column(cur):
+    global _STUDENT_GENDER_COL_CACHE
+    if _STUDENT_GENDER_COL_CACHE is not None:
+        return _STUDENT_GENDER_COL_CACHE or None
+
+    cur.execute("SHOW COLUMNS FROM basic_data_student")
+    student_columns = {row[0] for row in cur.fetchall()}
+    if "gender" in student_columns:
+        _STUDENT_GENDER_COL_CACHE = "gender"
+    elif "sex" in student_columns:
+        _STUDENT_GENDER_COL_CACHE = "sex"
+    else:
+        _STUDENT_GENDER_COL_CACHE = ""
+
+    return _STUDENT_GENDER_COL_CACHE or None
 
 
 def get_dashboard_overview(base_body: BaseBody):
@@ -300,9 +319,7 @@ def get_cluster_details(student_ids: list[str], time_begin=None, time_end=None, 
     conn = pymysql.connect(**mysql.DBCONFIG)
     cur = conn.cursor()
 
-    cur.execute("SHOW COLUMNS FROM basic_data_student")
-    student_columns = {row[0] for row in cur.fetchall()}
-    gender_col = "gender" if "gender" in student_columns else ("sex" if "sex" in student_columns else None)
+    gender_col = _resolve_student_gender_column(cur)
 
     sid_placeholders = ",".join(["%s"] * len(normalized_ids))
 
@@ -1110,7 +1127,6 @@ def analysis_drift(drift_body:DriftBody):
         idx += 1
         df_left = df_right
 
-    print(p_values)
     return {
         "p_values": p_values,
         "p_threshold": p_threshold,
@@ -1414,33 +1430,6 @@ def analysis_correlation(correlation_body:CorrelationBody):
             daily_avg_val = float(profile_cons.get("dailyAvg", 0.0)) if profile_cons is not None else 0.0
             monthly_avg_val = float(profile_cons.get("monthlyAvg", 0.0)) if profile_cons is not None else 0.0
 
-        conn = pymysql.connect(**mysql.DBCONFIG)
-        cur = conn.cursor()
-        # 学生绩点：独立查询，避免因消费缺失导致绩点被错误置为 0
-        if term:
-            cur.execute(
-                "SELECT gpa, term FROM basic_data_score WHERE student_id=%s AND term=%s ORDER BY term DESC LIMIT 1",
-                (correlation_body.studentId, term)
-            )
-            grow = cur.fetchone()
-            if not grow:
-                cur.execute(
-                    "SELECT gpa, term FROM basic_data_score WHERE student_id=%s ORDER BY term DESC LIMIT 1",
-                    (correlation_body.studentId,)
-                )
-                grow = cur.fetchone()
-        else:
-            cur.execute(
-                "SELECT gpa, term FROM basic_data_score WHERE student_id=%s ORDER BY term DESC LIMIT 1",
-                (correlation_body.studentId,)
-            )
-            grow = cur.fetchone()
-
-        cur.close()
-        conn.close()
-
-        gpa_val = float(grow[0]) if grow else 0.0
-
         # 基于群体分布的消费群体划分
         try:
             q20 = float(merged["dailyAvg"].quantile(0.2))
@@ -1471,20 +1460,42 @@ def analysis_correlation(correlation_body:CorrelationBody):
 
         conn = pymysql.connect(**mysql.DBCONFIG)
         cur = conn.cursor()
-        cur.execute(tx_sql, tx_params)
-        tx_rows = cur.fetchall()
+        try:
+            # 学生绩点：独立查询，避免因消费缺失导致绩点被错误置为 0
+            if term:
+                cur.execute(
+                    "SELECT gpa, term FROM basic_data_score WHERE student_id=%s AND term=%s ORDER BY term DESC LIMIT 1",
+                    (correlation_body.studentId, term)
+                )
+                grow = cur.fetchone()
+                if not grow:
+                    cur.execute(
+                        "SELECT gpa, term FROM basic_data_score WHERE student_id=%s ORDER BY term DESC LIMIT 1",
+                        (correlation_body.studentId,)
+                    )
+                    grow = cur.fetchone()
+            else:
+                cur.execute(
+                    "SELECT gpa, term FROM basic_data_score WHERE student_id=%s ORDER BY term DESC LIMIT 1",
+                    (correlation_body.studentId,)
+                )
+                grow = cur.fetchone()
 
-        cur.execute("SHOW COLUMNS FROM basic_data_student")
-        col_names = {row[0] for row in cur.fetchall()}
-        gender_col = "gender" if "gender" in col_names else ("sex" if "sex" in col_names else None)
-        student_sql = "SELECT student_id, name, college, major, class_name, grade"
-        if gender_col:
-            student_sql += f", {gender_col}"
-        student_sql += " FROM basic_data_student WHERE student_id=%s"
-        cur.execute(student_sql, (correlation_body.studentId,))
-        srow = cur.fetchone()
-        cur.close()
-        conn.close()
+            cur.execute(tx_sql, tx_params)
+            tx_rows = cur.fetchall()
+
+            gender_col = _resolve_student_gender_column(cur)
+            student_sql = "SELECT student_id, name, college, major, class_name, grade"
+            if gender_col:
+                student_sql += f", {gender_col}"
+            student_sql += " FROM basic_data_student WHERE student_id=%s"
+            cur.execute(student_sql, (correlation_body.studentId,))
+            srow = cur.fetchone()
+        finally:
+            cur.close()
+            conn.close()
+
+        gpa_val = float(grow[0]) if grow else 0.0
 
         tx_df = pd.DataFrame(tx_rows, columns=["amount", "meal_type", "window_id", "consumption_time"]) if tx_rows else pd.DataFrame(columns=["amount", "meal_type", "window_id", "consumption_time"])
         if not tx_df.empty:
