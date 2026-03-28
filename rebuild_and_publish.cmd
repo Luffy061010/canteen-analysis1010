@@ -4,12 +4,12 @@ setlocal
 
 cd /d "%~dp0"
 
-set VERSION=v1.0.0
+set VERSION=V1.0.0
 
 echo [1/6] 清理本地旧容器和卷
 docker compose down -v
 
-echo [2/6] 构建并推送前端/Java/Python 镜像
+echo [2/6] 构建并推送前端/backend 镜像
 call release.cmd
 if errorlevel 1 exit /b 1
 
@@ -19,19 +19,16 @@ if errorlevel 1 (
   echo [WARN] 导出 SQL 失败，请检查本机 MySQL 后重试。
 )
 
-echo [4/6] 拉取镜像
-docker compose pull
-if errorlevel 1 exit /b 1
-
-echo [5/6] 启动四容器（前端本地重建）
+echo [4/6] 启动三容器（源码本地构建）
 docker compose up -d --build
 if errorlevel 1 exit /b 1
 
-echo [6/6] 状态检查
+echo [5/6] 状态检查
 docker compose ps
 
+echo [6/6] 发布完成
 echo.
 echo 完成：版本 %VERSION%
 echo 本机访问: http://localhost
-echo 对方部署: git clone 后执行 docker compose pull ^&^& docker compose up -d
+echo 对方部署: git clone 后执行 deploy.cmd
 exit /b 0

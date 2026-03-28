@@ -4,7 +4,7 @@ setlocal
 
 cd /d "%~dp0"
 
-set VERSION=v1.0.0
+set VERSION=V1.0.0
 set IMAGE_ARCHIVE=images\canteen-images-%VERSION%.tar
 set MAX_WAIT_SECONDS=240
 
@@ -79,8 +79,7 @@ echo [ERROR] Startup timeout after %MAX_WAIT_SECONDS%s. Containers may still be 
 echo [HINT] Run the following commands to inspect:
 echo        docker compose ps
 echo        docker compose logs mysql
-echo        docker compose logs java
-echo        docker compose logs python
+echo        docker compose logs backend
 echo        docker compose logs frontend
 exit /b 1
 

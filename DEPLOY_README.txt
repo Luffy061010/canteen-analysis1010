@@ -1,54 +1,43 @@
-【公开仓库部署说明（三容器源码构建版）】
+【系统部署最终说明（Windows）】
 
-一、适用场景
-1) 代码已公开在 Git 仓库
-2) 对方机器可从源码构建镜像（无需你手工发安装包）
-3) 数据库使用官方 mysql:8.0
-4) 对方无需你手工传数据库文件（仓库内 SQL 自动导入）
+一、最终架构
+1) frontend 容器
+2) backend 容器（Java + FastAPI）
+3) mysql 容器（mysql:8.0）
 
-二、对方机器前置条件
-1) 已安装 Docker Desktop
-2) 已安装 Git
-3) 能访问 GitHub 和 Docker Hub
+二、数据库包要不要单独构建
+1) 在线源码部署：不需要单独构建数据库包。
+2) 原因：数据库容器直接用官方 mysql:8.0，业务库结构和数据通过 docker/mysql/init/*.sql 自动导入。
+3) 离线部署：需要把 mysql:8.0 镜像一起打进离线包（make_offline_bundle.cmd 已自动处理）。
 
-三、首次部署（对方执行）
-1) git clone <你的公开仓库地址>
-2) cd <仓库目录>
-3) deploy.cmd
-5) 浏览器访问：http://localhost
+三、客户在线部署步骤（推荐）
+1) 安装 Docker Desktop 和 Git。
+2) 执行：
+	git clone <你的仓库地址>
+	cd <仓库目录>
+	deploy.cmd
+3) 访问：http://localhost
 
-说明：deploy.cmd 会自动 `docker compose down -v` 后 `docker compose up -d --build`，并从源码构建三个容器。
+四、你发布新版本步骤
+1) 本机构建并推送业务镜像（版本固定 V1.0.0）：
+	release.cmd
+2) 提交代码并推送到 GitHub。
+3) 通知客户执行：
+	git pull
+	deploy.cmd
 
-说明：MySQL 首次启动时会自动执行 docker/mysql/init 下 SQL（包含 003_back_end_data.sql 与 004_add_indexes.sql），把 back_end 数据导入并补齐性能索引。
+五、离线部署（客户无法联网时）
+1) 你执行：make_offline_bundle.cmd
+2) 发送：offline-bundle-V1.0.0.zip
+3) 客户解压后执行：deploy_offline.cmd
 
-四、版本升级（对方执行）
-1) git pull
-2) deploy.cmd
+六、数据库重置和重新导入
+1) 执行：
+	docker compose down -v
+	deploy.cmd
 
-五、发布新版本（你执行）
-1) 在仓库提交代码并推送到 GitHub
-2) 对方机器执行 `git pull` 后执行 `deploy.cmd`
-
-（可选）你仍可保留 GitHub Actions 构建发布流程，但部署本身不依赖 Docker Hub。
-
-六、常见问题
-1) 端口占用
-- 修改 docker-compose.yml 中 80/3307 映射端口
-
-2) 数据未刷新或需全量重导
-- docker compose down -v
-- docker compose up -d
-
-3) 容器检查
-- docker compose ps
-- docker compose logs mysql
-- docker compose logs backend
-- docker compose logs frontend
-
-4) 依赖下载慢或失败（构建 backend 时）
-- 通常是 Maven/PyPI 网络问题，不是项目逻辑问题。
-- 可重试：docker compose build --no-cache backend
-- 或配置代理/镜像源后再执行 deploy.cmd
-
-七、你本机“清空后重建并发布”
-1) 在仓库根目录执行：rebuild_and_publish.cmd
+七、故障排查
+1) 查看状态：docker compose ps
+2) 查看后端日志：docker compose logs backend
+3) 查看数据库日志：docker compose logs mysql
+4) 查看前端日志：docker compose logs frontend

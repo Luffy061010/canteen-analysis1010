@@ -8,15 +8,15 @@
 2. 双击运行 `make_offline_bundle.cmd`。
 3. 等待脚本完成，会生成：
 
-- 文件夹：`offline-bundle-v1.0.0`
-- 压缩包：`offline-bundle-v1.0.0.zip`
+- 文件夹：`offline-bundle-V1.0.0`
+- 压缩包：`offline-bundle-V1.0.0.zip`
 
-把 `offline-bundle-v1.0.0.zip` 发给对方（U盘/局域网/网盘都可以）。
+把 `offline-bundle-V1.0.0.zip` 发给对方（U盘/局域网/网盘都可以）。
 
 ## 二、对方机器做什么（离线）
 
 1. 安装并启动 Docker Desktop。
-2. 解压 `offline-bundle-v1.0.0.zip`。
+2. 解压 `offline-bundle-V1.0.0.zip`。
 3. 双击 `双击我部署.cmd`（或直接运行 `deploy_offline.cmd`）。
 4. 看到成功提示后，浏览器打开 `http://localhost`。
 

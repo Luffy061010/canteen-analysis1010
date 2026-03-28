@@ -4,7 +4,7 @@ setlocal
 
 cd /d "%~dp0"
 
-set VERSION=v1.0.0
+set VERSION=V1.0.0
 set BUNDLE_DIR=offline-bundle-%VERSION%
 set IMAGE_ARCHIVE=canteen-images-%VERSION%.tar
 set ZIP_NAME=%BUNDLE_DIR%.zip
@@ -30,11 +30,10 @@ mkdir "%BUNDLE_DIR%\docker\mysql\init"
 echo [2/8] Pull required images
 docker pull mysql:8.0 || goto :fail
 docker pull lln1010/1010-frontend:%VERSION% || goto :fail
-docker pull lln1010/1010-python:%VERSION% || goto :fail
-docker pull lln1010/1010-java:%VERSION% || goto :fail
+docker pull lln1010/1010-backend:%VERSION% || goto :fail
 
 echo [3/8] Save image archive
-docker save -o "%BUNDLE_DIR%\images\%IMAGE_ARCHIVE%" mysql:8.0 lln1010/1010-frontend:%VERSION% lln1010/1010-python:%VERSION% lln1010/1010-java:%VERSION% || goto :fail
+docker save -o "%BUNDLE_DIR%\images\%IMAGE_ARCHIVE%" mysql:8.0 lln1010/1010-frontend:%VERSION% lln1010/1010-backend:%VERSION% || goto :fail
 
 echo [4/8] Copy compose and SQL init files
 copy /Y "docker-compose.yml" "%BUNDLE_DIR%\docker-compose.yml" >nul || goto :fail

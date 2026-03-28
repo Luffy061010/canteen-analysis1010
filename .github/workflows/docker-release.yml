@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Docker image tag, for example v1.0.0"
+        description: "Docker image tag, for example V1.0.0"
         required: true
-        default: "v1.0.0"
+        default: "V1.0.0"
       push_latest:
         description: "Also push latest tag"
         required: true
@@ -20,6 +20,7 @@ on:
   push:
     tags:
       - "v*"
+      - "V*"
 
 concurrency:
   group: docker-release-${{ github.ref }}
@@ -56,12 +57,9 @@ jobs:
           - name: frontend
             dockerfile: docker/frontend/Dockerfile
             repo: 1010-frontend
-          - name: python
-            dockerfile: docker/python/Dockerfile
-            repo: 1010-python
-          - name: java
-            dockerfile: docker/backend/Dockerfile
-            repo: 1010-java
+          - name: backend
+            dockerfile: docker/backend/Dockerfile.fullstack
+            repo: 1010-backend
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -135,7 +133,7 @@ jobs:
             NS="$DOCKERHUB_USERNAME"
           fi
 
-          for repo in 1010-frontend 1010-python 1010-java; do
+          for repo in 1010-frontend 1010-backend; do
             code=$(curl -s -o /tmp/tag.json -w "%{http_code}" "https://hub.docker.com/v2/repositories/$NS/$repo/tags/$VERSION")
             if [ "$code" != "200" ]; then
               echo "Tag verify failed: $NS/$repo:$VERSION"
@@ -145,7 +143,7 @@ jobs:
           done
 
           if [ "$PUSH_LATEST" = "true" ]; then
-            for repo in 1010-frontend 1010-python 1010-java; do
+            for repo in 1010-frontend 1010-backend; do
               code=$(curl -s -o /tmp/tag.json -w "%{http_code}" "https://hub.docker.com/v2/repositories/$NS/$repo/tags/latest")
               if [ "$code" != "200" ]; then
                 echo "Tag verify failed: $NS/$repo:latest"
