@@ -21,7 +21,7 @@ spring:
           max-idle: 8    # 最大空闲连接数
           min-idle: 2    # 最小空闲连接数
   cache:
-    type: redis        # 指定缓存类型为 Redis
+    type: ${CACHE_TYPE:redis}        # 容器部署可通过 CACHE_TYPE=simple 关闭 Redis 依赖
     redis:
       time-to-live: 0  # 过期时间0小时，单位毫秒
 

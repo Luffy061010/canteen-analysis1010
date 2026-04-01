@@ -96,7 +96,7 @@
 
         <el-card style="margin-top: 12px;">
           <template #header>
-            <span>时序漂移曲线</span>
+            <span>概念漂移检测结果</span>
           </template>
           <div id="intervalDriftChart" class="drift-chart"></div>
         </el-card>
@@ -243,7 +243,7 @@ export default {
         grade: '',
         class: '',
         studentId: '',
-        dateRange: [],
+        dateRange: ['2024-09-01', '2024-09-30'],
         timeWindow: 7,
         pThreshold: 0.05
       },
@@ -1034,7 +1034,7 @@ export default {
         grade: '',
         class: '',
         studentId: '',
-        dateRange: [],
+        dateRange: ['2024-09-01', '2024-09-30'],
         timeWindow: 7,
         pThreshold: 0.05
       }

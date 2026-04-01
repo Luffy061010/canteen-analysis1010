@@ -4,7 +4,7 @@
       <div class="login-hero">
         <div class="hero-badge">安全 · 便捷 · 数据可视化</div>
         <div class="hero-title">用户消费行为分析系统</div>
-        <div class="hero-subtitle">面向校园餐饮消费数据流分析</div>
+        <div class="hero-subtitle">面向校园餐饮消费数据流</div>
         <ul class="hero-list">
           <li>24小时消费统计与趋势识别</li>
           <li>多维度查询与统计分析</li>

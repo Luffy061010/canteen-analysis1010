@@ -827,18 +827,18 @@ def analysis_cluster_details(
 
     begin_date = None
     end_date = None
+    normalized_begin = timeBegin or "2024-09-01"
+    normalized_end = timeEnd or "2024-09-30"
     try:
-        if timeBegin:
-            begin_date = datetime.strptime(timeBegin, "%Y-%m-%d").date()
-        if timeEnd:
-            end_date = datetime.strptime(timeEnd, "%Y-%m-%d").date()
+        begin_date = datetime.strptime(normalized_begin, "%Y-%m-%d").date()
+        end_date = datetime.strptime(normalized_end, "%Y-%m-%d").date()
     except ValueError:
         raise HTTPException(status_code=400, detail="timeBegin/timeEnd 日期格式错误，需 YYYY-MM-DD")
 
     ids_for_cache = sorted(set(ids))
     ids_raw = ",".join(ids_for_cache)
     ids_digest = hashlib.md5(ids_raw.encode("utf-8")).hexdigest()
-    cache_key = f"api:cluster:details:v3:{ids_digest}:{timeBegin or ''}:{timeEnd or ''}:{int(includeLlm)}"
+    cache_key = f"api:cluster:details:v4:{ids_digest}:{normalized_begin}:{normalized_end}:{int(includeLlm)}"
     val = r.get_key(cache_key)
     if val:
         return json.loads(val)

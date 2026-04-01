@@ -20,7 +20,7 @@
         <!-- 学生信息管理 -->
         <el-menu-item index="/student-info">
           <el-icon><User /></el-icon>
-          <span>学生基本信息管理</span>
+          <span>学生基本信息查询</span>
         </el-menu-item>
 
         <!-- 消费信息查询 -->
@@ -38,7 +38,7 @@
         <el-sub-menu index="analysis">
           <template #title>
             <el-icon><DataAnalysis /></el-icon>
-            <span>消费数据分析</span>
+            <span>消费行为分析</span>
           </template>
 
           <el-menu-item index="/consumption-analysis/drift-detection">

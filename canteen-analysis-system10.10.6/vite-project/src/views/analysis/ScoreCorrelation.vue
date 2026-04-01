@@ -120,7 +120,7 @@ export default {
         major: '',
         grade: '',
         class: '',
-        dateRange: [],
+        dateRange: ['2024-09-01', '2024-09-30'],
         studentId: '',
         correlationMethod: 'pearson',
         variable1: 'gpa'
@@ -553,7 +553,7 @@ export default {
         major: '',
         grade: '',
         class: '',
-        dateRange: [],
+        dateRange: ['2024-09-01', '2024-09-30'],
         studentId: '',
         correlationMethod: 'pearson',
         variable1: 'gpa'

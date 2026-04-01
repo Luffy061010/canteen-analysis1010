@@ -15,6 +15,8 @@ const parsedFastapiTimeout = Number(import.meta.env.VITE_FASTAPI_TIMEOUT ?? REQU
 const FASTAPI_TIMEOUT = Number.isFinite(parsedFastapiTimeout) && parsedFastapiTimeout >= 3000 ? parsedFastapiTimeout : REQUEST_TIMEOUT
 const parsedExportTimeout = Number(import.meta.env.VITE_EXPORT_TIMEOUT ?? Math.max(REQUEST_TIMEOUT, 300000))
 const EXPORT_TIMEOUT = Number.isFinite(parsedExportTimeout) && parsedExportTimeout >= REQUEST_TIMEOUT ? parsedExportTimeout : Math.max(REQUEST_TIMEOUT, 300000)
+const DEFAULT_MONTH_BEGIN = '2024-09-01'
+const DEFAULT_MONTH_END = '2024-09-30'
 
 // 独立的 FastAPI 客户端，防止被 Java 前缀再次代理
 const fastapiRequest = axios.create({
@@ -165,9 +167,9 @@ const ensureTimeRange = (params = {}) => {
     const end = next.timeEnd || next.time_end || next.end_date
 
     if (!begin || !end) {
-        // 防止后端 SQL 拼接出现无 WHERE 时的语法错误，给一个超宽时间范围兜底
-        next.timeBegin = begin || '1970-01-01'
-        next.timeEnd = end || '2099-12-31'
+        // 首次无筛选时默认仅加载 2024-09，避免把全量数据一次性返回前端
+        next.timeBegin = begin || DEFAULT_MONTH_BEGIN
+        next.timeEnd = end || DEFAULT_MONTH_END
     } else {
         next.timeBegin = begin
         next.timeEnd = end
@@ -246,28 +248,23 @@ export const getConsumptionMealType = (form) => {
 
 // ==================== 分析相关API ====================
 export const getScoreCorrelation = (form) => {
-    const params = buildParams(form)
+    const params = ensureTimeRange(buildParams(form))
     return fastapiRequest.get(`/analysis/correlation`, { params })
 }
 
 export const getConsumptionDrift = (form) => {
-    const params = buildParams(form)
-    // 兜底时间范围，避免后端 400
-    if (!params.timeBegin || !params.timeEnd) {
-        params.timeBegin = params.timeBegin || '1970-01-01'
-        params.timeEnd = params.timeEnd || '2099-12-31'
-    }
+    const params = ensureTimeRange(buildParams(form))
     // 注意不要以 / 开头，否则会绕过 baseURL
     return fastapiRequest.get(`analysis/drift`, { params })
 }
 
 export const getPovertyIdentification = (form) => {
-    const params = buildParams(form)
+    const params = ensureTimeRange(buildParams(form))
     return fastapiRequest.get(`/analysis/cluster`, { params })
 }
 
 export const getClusterDetails = (form) => {
-    const params = buildParams(form)
+    const params = ensureTimeRange(buildParams(form))
     return fastapiRequest.get(`/analysis/cluster/details`, { params })
 }
 
@@ -291,12 +288,12 @@ export const getDeepSeekExplanation = async (payload) => {
 
 // ==================== 汇总数据API ====================
 export const getSummaryData = (form) => {
-    const params = buildParams(form)
+    const params = ensureTimeRange(buildParams(form))
     return fastapiRequest.get(`/analysis/summary/data`, { params })
 }
 
 export const getDashboardOverview = (form) => {
-    const params = buildParams(form)
+    const params = ensureTimeRange(buildParams(form))
     return fastapiRequest.get(`/analysis/dashboard/overview`, { params }).catch(async (error) => {
         const status = error?.response?.status
         if (status !== 404) {

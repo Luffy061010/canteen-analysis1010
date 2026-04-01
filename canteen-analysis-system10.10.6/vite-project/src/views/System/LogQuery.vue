@@ -294,7 +294,7 @@ const queryForm = reactive({
   module: '',
   result: '',
   ipAddress: '',
-  timeRange: []
+  timeRange: ['2024-09-01', '2024-09-30']
 })
 
 const queryFormRef = ref(null)
@@ -400,6 +400,7 @@ const handleQuery = () => {
 // 重置表单
 const handleReset = () => {
   queryFormRef.value?.resetFields()
+  queryForm.timeRange = ['2024-09-01', '2024-09-30']
   pagination.currentPage = 1
   sortParams.prop = ''
   sortParams.order = ''

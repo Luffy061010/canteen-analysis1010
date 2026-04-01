@@ -10,7 +10,7 @@
 
     <el-card>
       <template #header>
-        <span>用户画像模块</span>
+        <span>用户画像构建模块</span>
       </template>
 
       <el-form :model="queryForm" label-width="100px">
@@ -89,7 +89,7 @@
         <el-col :xs="24" :lg="8">
           <el-card>
             <template #header>
-              <span>四类消费层级占比</span>
+              <span>消费层级占比</span>
             </template>
             <BaseChart :options="pieOptions" :loading="loading" :container-style="{ width: '100%', height: '360px' }" />
           </el-card>
@@ -144,7 +144,9 @@
         <div v-else class="explain-list" v-loading="llmLoading">
           <div v-for="item in llmExplanationItems" :key="item.title" class="explain-item">
             <div class="explain-title">{{ item.title }}</div>
-            <div class="explain-content">{{ item.text }}</div>
+            <div class="explain-content">
+              <p v-for="(segment, idx) in item.segments" :key="`${item.title}-${idx}`" class="explain-paragraph">{{ segment }}</p>
+            </div>
           </div>
         </div>
       </el-card>
@@ -168,7 +170,7 @@ export default {
         major: '',
         grade: '',
         class: '',
-        dateRange: [],
+        dateRange: ['2024-09-01', '2024-09-30'],
         studentId: ''
       },
       colleges: Object.keys(COLLEGES_MAJORS),
@@ -407,14 +409,14 @@ export default {
         const name = first.name || ''
         return [{
           title: `个人画像解释：${sid}${name ? ` (${name})` : ''}`,
-          text: this.llmPersonalText
+          segments: this.splitExplanationText(this.llmPersonalText)
         }]
       }
 
       if (!this.llmSummaryText) return []
       return [{
         title: '群体画像解释（四类消费层级）',
-        text: this.llmSummaryText
+        segments: this.splitExplanationText(this.llmSummaryText)
       }]
     }
   },
@@ -548,6 +550,45 @@ export default {
     toFixedNum(v, digit = 2) {
       const n = Number(v || 0)
       return Number.isNaN(n) ? 0 : Number(n.toFixed(digit))
+    },
+
+    splitExplanationText(text) {
+      const content = String(text || '').trim()
+      if (!content) return []
+
+      const normalized = content
+        .replace(/\r\n/g, '\n')
+        .replace(/[\t ]+/g, ' ')
+        .trim()
+
+      const byLine = normalized
+        .split('\n')
+        .map(s => s.trim())
+        .filter(Boolean)
+
+      if (byLine.length > 1) {
+        return byLine
+      }
+
+      const punctuated = normalized.replace(/([。！？；])/g, '$1\n')
+      const fragments = punctuated
+        .split('\n')
+        .map(s => s.trim())
+        .filter(Boolean)
+
+      const segments = []
+      let bucket = ''
+      fragments.forEach((frag) => {
+        const next = bucket ? `${bucket}${frag}` : frag
+        if (next.length >= 95) {
+          segments.push(next)
+          bucket = ''
+        } else {
+          bucket = next
+        }
+      })
+      if (bucket) segments.push(bucket)
+      return segments.length ? segments : [normalized]
     },
 
     avgBy(rows, key) {
@@ -834,7 +875,7 @@ export default {
         major: '',
         grade: '',
         class: '',
-        dateRange: [],
+        dateRange: ['2024-09-01', '2024-09-30'],
         studentId: ''
       }
       this.majors = []
@@ -917,6 +958,14 @@ export default {
   color: #606266;
   line-height: 1.7;
   font-size: 14px;
+}
+
+.explain-paragraph {
+  margin: 0 0 8px;
+}
+
+.explain-paragraph:last-child {
+  margin-bottom: 0;
 }
 
 @media (max-width: 1200px) {

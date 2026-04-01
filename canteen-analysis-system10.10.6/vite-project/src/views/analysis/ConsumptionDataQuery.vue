@@ -143,7 +143,7 @@
         <el-col :xs="24" :lg="12">
           <el-card>
             <template #header>
-              <span>餐别消费占比</span>
+              <span>三餐消费占比</span>
             </template>
             <div id="mealTypeChart" class="chart" />
           </el-card>
@@ -174,7 +174,7 @@ export default {
         major: '',
         grade: '',
         class: '',
-        dateRange: [],
+        dateRange: ['2024-09-01', '2024-09-30'],
         studentId: ''
       },
       colleges: Object.keys(COLLEGES_MAJORS),
@@ -675,7 +675,7 @@ export default {
         major: '',
         grade: '',
         class: '',
-        dateRange: [],
+        dateRange: ['2024-09-01', '2024-09-30'],
         studentId: ''
       }
       this.majors = []

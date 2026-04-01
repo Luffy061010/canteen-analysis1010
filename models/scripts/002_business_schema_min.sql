@@ -7,7 +7,9 @@ CREATE TABLE IF NOT EXISTS basic_data_student (
     college VARCHAR(128) NULL,
     major VARCHAR(128) NULL,
     class_name VARCHAR(128) NULL,
-    grade VARCHAR(32) NULL
+    grade VARCHAR(32) NULL,
+    gender VARCHAR(16) NULL,
+    phone_number VARCHAR(32) NULL
 );
 
 CREATE TABLE IF NOT EXISTS consumption_data_students_consumption (

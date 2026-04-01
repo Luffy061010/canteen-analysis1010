@@ -2,7 +2,7 @@
   <!-- 页面：消费数据分析入口（标签页容器） -->
   <div class="consumption-analysis">
     <div class="page-header">
-      <h2>消费数据分析</h2>
+      <h2>消费行为分析</h2>
       <p class="page-description">基于校园餐饮消费数据流的深度分析</p>
     </div>
     

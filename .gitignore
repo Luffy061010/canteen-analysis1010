@@ -33,7 +33,7 @@ yarn-error.log*
 **/build/
 **/.gradle/
 
-# Docker runtime data (optional: keep db init SQL under docker/mysql/init)
+# Docker runtime data (db init SQL now from models/scripts)
 mysql_data/
 
 # Local debug artifacts from troubleshooting

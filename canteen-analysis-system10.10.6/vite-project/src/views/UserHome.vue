@@ -44,7 +44,7 @@ import { getStoredUserInfo } from '@/utils/auth'
 const userInfo = getStoredUserInfo() || {}
 const uid = userInfo.username || ''
 
-const range = ref([])
+const range = ref(['2024-09-01', '2024-09-30'])
 const trend = ref([])
 const records = ref([])
 const currentPage = ref(1)

@@ -1,73 +1,124 @@
 services:
   mysql:
-    image: mysql:8.0
-    container_name: canteen-mysql
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: 123456
-      MYSQL_DATABASE: back_end
-      TZ: Asia/Shanghai
-    ports:
-      - "3307:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p123456"]
-      interval: 10s
-      timeout: 5s
-      retries: 20
-      start_period: 30s
-    networks:
-      - canteen-net
-
-  backend:
+    container_name: mysql
+    image: ${DOCKERHUB_NAMESPACE:-local}/canteen-mysql:${IMAGE_TAG:-V1.0}
     build:
       context: .
-      dockerfile: docker/backend/Dockerfile.fullstack
-    image: canteen-backend:local
-    container_name: canteen-backend
+      dockerfile: docker/mysql/Dockerfile
     restart: unless-stopped
-    depends_on:
-      mysql:
-        condition: service_healthy
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-back_end}
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-123456}"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - app-net
+
+  redis:
+    container_name: redis
+    image: redis:7.2-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-123112}"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-123112}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
+    volumes:
+      - redis_data:/data
+    networks:
+      - app-net
+
+  java-backend:
+    container_name: java-backend
+    image: ${DOCKERHUB_NAMESPACE:-local}/canteen-java-backend:${IMAGE_TAG:-V1.0}
+    build:
+      context: ./canteen-analysis
+      dockerfile: Dockerfile
+    restart: unless-stopped
     environment:
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-back_end}
       MYSQL_USER: root
-      MYSQL_PASSWORD: 123456
-      MYSQL_DATABASE: back_end
-      FASTAPI_BASE_URL: http://127.0.0.1:8000
-      REDIS_HOST: localhost
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
+      CACHE_TYPE: redis
+      REDIS_HOST: redis
       REDIS_PORT: 6379
-      REDIS_PASSWORD: ""
-      REDIS_DB: 0
-      TZ: Asia/Shanghai
-    expose:
-      - "8000"
-      - "8080"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-123112}
+      REDIS_DB: ${REDIS_DB:-0}
+      TZ: ${TZ:-Asia/Shanghai}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${JAVA_PORT:-8080}:8080"
     networks:
-      canteen-net:
-        aliases:
-          - backend
+      - app-net
+
+  python-backend:
+    container_name: python-backend
+    image: ${DOCKERHUB_NAMESPACE:-local}/canteen-python-backend:${IMAGE_TAG:-V1.0}
+    build:
+      context: ./canteen-analysis-python
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-back_end}
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
+      REDIS_ENABLED: 1
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-123112}
+      REDIS_DB: ${REDIS_DB:-0}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost,http://127.0.0.1}
+      TZ: ${TZ:-Asia/Shanghai}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${PYTHON_PORT:-8000}:8000"
+    networks:
+      - app-net
 
   frontend:
+    container_name: frontend
+    image: ${DOCKERHUB_NAMESPACE:-local}/canteen-frontend:${IMAGE_TAG:-V1.0}
     build:
-      context: .
-      dockerfile: docker/frontend/Dockerfile
-    image: canteen-frontend:local
-    container_name: canteen-frontend
+      context: ./canteen-analysis-system10.10.6/vite-project
+      dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
-      - backend
+      - java-backend
+      - python-backend
     ports:
-      - "80:80"
+      - "${FRONTEND_PORT:-80}:80"
     networks:
-      - canteen-net
+      - app-net
 
 volumes:
   mysql_data:
+  redis_data:
 
 networks:
-  canteen-net:
+  app-net:
     driver: bridge

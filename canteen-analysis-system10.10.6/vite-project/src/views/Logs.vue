@@ -53,7 +53,7 @@ const logs = ref([])
 const page = ref(1)
 const page_size = ref(50)
 const total = ref(0)
-const filters = ref({ username: '', action: '', range: [] })
+const filters = ref({ username: '', action: '', range: ['2024-09-01', '2024-09-30'] })
 
 const buildParams = (p = page.value) => {
   const params = { page: p, page_size: page_size.value }

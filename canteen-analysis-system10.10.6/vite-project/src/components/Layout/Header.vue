@@ -5,7 +5,7 @@
       <img src="@/assets/logo.png" alt="山西大学" class="logo" @error="handleLogoError">
       <div class="system-name">
         <h1 class="system-title">用户消费行为分析系统 </h1>
-        <p class="system-subtitle">基于校园餐饮消费数据流分析</p>
+        <p class="system-subtitle">面向校园餐饮消费数据流</p>
       </div>
     </div>
     

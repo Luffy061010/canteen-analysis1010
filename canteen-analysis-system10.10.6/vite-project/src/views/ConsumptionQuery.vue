@@ -3,7 +3,7 @@
   <div class="consumption-query">
     <el-card>
       <template #header>
-        <span>消费数据查询</span>
+        <span>消费信息查询</span>
       </template>
 
       <el-form :model="queryForm" ref="queryForm" label-width="80px">
@@ -226,8 +226,8 @@ export default {
         major: '',
         grade: '',
         class: '',
-        startDate: '',
-        endDate: '',
+        startDate: '2024-09-01',
+        endDate: '2024-09-30',
         studentId: '',
       },
       // 选项数据
@@ -391,8 +391,8 @@ export default {
         major: '',
         grade: '',
         class: '',
-        startDate: '',
-        endDate: '',
+        startDate: '2024-09-01',
+        endDate: '2024-09-30',
         studentId: ''
       };
       this.majorOptions = [];

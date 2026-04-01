@@ -1,0 +1,4 @@
+-- 请将真实业务数据 SQL 放到此文件。
+-- 该文件只会在 MySQL 数据卷首次初始化时自动执行。
+-- 推荐自动生成方式：
+--   powershell -ExecutionPolicy Bypass -File .\export-real-data.ps1 -ContainerName mysql -Database back_end -RootPassword 123456
