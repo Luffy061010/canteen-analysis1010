@@ -1,124 +1,103 @@
 services:
   mysql:
-    container_name: mysql
-    image: ${DOCKERHUB_NAMESPACE:-local}/canteen-mysql:${IMAGE_TAG:-V1.0}
-    build:
-      context: .
-      dockerfile: docker/mysql/Dockerfile
+    image: mysql:8.4
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-back_end}
       TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./models/scripts:/docker-entrypoint-initdb.d:ro
     ports:
       - "${MYSQL_PORT:-3306}:3306"
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-123456}"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$${MYSQL_ROOT_PASSWORD}"]
       interval: 10s
       timeout: 5s
-      retries: 15
-      start_period: 30s
-    volumes:
-      - mysql_data:/var/lib/mysql
-    networks:
-      - app-net
+      retries: 12
 
   redis:
-    container_name: redis
     image: redis:7.2-alpine
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-123112}"]
+    volumes:
+      - redis-data:/data
     ports:
       - "${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-123112}", "ping"]
       interval: 10s
       timeout: 5s
-      retries: 15
-      start_period: 10s
-    volumes:
-      - redis_data:/data
-    networks:
-      - app-net
-
-  java-backend:
-    container_name: java-backend
-    image: ${DOCKERHUB_NAMESPACE:-local}/canteen-java-backend:${IMAGE_TAG:-V1.0}
-    build:
-      context: ./canteen-analysis
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    environment:
-      MYSQL_HOST: mysql
-      MYSQL_PORT: 3306
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-back_end}
-      MYSQL_USER: root
-      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
-      CACHE_TYPE: redis
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-123112}
-      REDIS_DB: ${REDIS_DB:-0}
-      TZ: ${TZ:-Asia/Shanghai}
-    depends_on:
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    ports:
-      - "${JAVA_PORT:-8080}:8080"
-    networks:
-      - app-net
+      retries: 12
 
   python-backend:
-    container_name: python-backend
-    image: ${DOCKERHUB_NAMESPACE:-local}/canteen-python-backend:${IMAGE_TAG:-V1.0}
     build:
       context: ./canteen-analysis-python
       dockerfile: Dockerfile
+    image: ${DOCKERHUB_NAMESPACE:-local}/canteen-python:${IMAGE_TAG:-V1.0}
     restart: unless-stopped
-    environment:
-      MYSQL_HOST: mysql
-      MYSQL_PORT: 3306
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-back_end}
-      MYSQL_USER: root
-      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
-      REDIS_ENABLED: 1
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-123112}
-      REDIS_DB: ${REDIS_DB:-0}
-      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost,http://127.0.0.1}
-      TZ: ${TZ:-Asia/Shanghai}
     depends_on:
       mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-back_end}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-123112}
+      REDIS_DB: ${REDIS_DB:-0}
+      REDIS_ENABLED: "1"
     ports:
       - "${PYTHON_PORT:-8000}:8000"
-    networks:
-      - app-net
+
+  java-backend:
+    build:
+      context: ./canteen-analysis
+      dockerfile: Dockerfile
+    image: ${DOCKERHUB_NAMESPACE:-local}/canteen-java:${IMAGE_TAG:-V1.0}
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      python-backend:
+        condition: service_started
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-back_end}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-123112}
+      REDIS_DB: ${REDIS_DB:-0}
+      CACHE_TYPE: redis
+      FASTAPI_BASE_URL: http://python-backend:8000
+    ports:
+      - "${JAVA_PORT:-8080}:8080"
 
   frontend:
-    container_name: frontend
-    image: ${DOCKERHUB_NAMESPACE:-local}/canteen-frontend:${IMAGE_TAG:-V1.0}
     build:
       context: ./canteen-analysis-system10.10.6/vite-project
       dockerfile: Dockerfile
+    image: ${DOCKERHUB_NAMESPACE:-local}/canteen-frontend:${IMAGE_TAG:-V1.0}
     restart: unless-stopped
     depends_on:
-      - java-backend
-      - python-backend
+      java-backend:
+        condition: service_started
+      python-backend:
+        condition: service_started
     ports:
       - "${FRONTEND_PORT:-80}:80"
-    networks:
-      - app-net
 
 volumes:
-  mysql_data:
-  redis_data:
-
-networks:
-  app-net:
-    driver: bridge
+  mysql-data:
+  redis-data:
