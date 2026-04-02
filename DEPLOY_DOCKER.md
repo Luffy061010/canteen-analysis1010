@@ -1,94 +1,114 @@
-# Docker 异机部署（纯 CMD）
+# Docker 异机部署（软著可用，纯 CMD）
 
-目标：全流程只用 CMD；同事只要拉代码并执行命令，不需要你每次单独发 SQL 文件。
+目标：部署方仅使用 CMD 命令完成环境准备、代码获取、镜像拉取与容器启动。
 
-## 1. 构建并推送镜像到 Docker Hub（你执行）
+## 1. 运行环境要求
 
-在仓库根目录打开 cmd：
+- Windows 10/11（64 位）
+- 已联网，可访问 GitHub 与 Docker Hub
+- 需安装 Docker Desktop 与 Git
 
-```cmd
-publish-images.cmd 你的DockerHub用户名 V1.0
-```
+## 2. 安装 Docker Desktop
 
-这一步会完成：
-
-- `docker login`
-- `docker compose build frontend java-backend python-backend`
-- `docker compose push frontend java-backend python-backend`
-
-## 2. 同事在自己的机器部署（只用 CMD）
-
-同事拿到代码后，在仓库根目录执行：
+在 CMD 执行：
 
 ```cmd
-deploy.cmd 你的DockerHub用户名 V1.0
+winget install -e --id Docker.DockerDesktop
 ```
 
-这一步会完成：
+安装后启动 Docker Desktop，确保 Docker 服务已就绪。
 
-- 拉取镜像
-- 启动 mysql、redis、python、java、frontend
+## 3. 安装 Git
 
-## 3. 不再单独发 SQL 文件的做法（推荐）
+在 CMD 执行：
 
-把真实数据 SQL 放在仓库 `models\scripts\back_end_*.sql` 后，同事可直接执行：
+```cmd
+winget install -e --id Git.Git
+```
+
+## 4. 安装结果校验
+
+在 CMD 执行：
+
+```cmd
+docker --version
+docker compose version
+git --version
+```
+
+## 5. 获取系统源码
+
+在 CMD 执行：
+
+```cmd
+git clone https://github.com/Luffy061010/canteen-analysis1010.git
+cd canteen-analysis1010
+```
+
+## 6. 容器化部署（推荐命令）
+
+在项目根目录执行：
 
 ```cmd
 deploy.cmd 你的DockerHub用户名 V1.0 back_end AUTO
 ```
 
-该命令会批量导入：`models\scripts\back_end_*.sql`。
+说明：
 
-## 4. 导入自定义 SQL（可选）
+- 该命令会自动拉取 Docker Hub 镜像并启动系统容器。
+- 自动初始化/导入 `models\scripts\back_end_*.sql` 数据文件。
+- 自动重建后端容器，确保新库配置生效。
 
-```cmd
-docker\mysql\import-database.cmd back_end_alice models\scripts\003_seed_data.sql
-```
+> 不建议仅使用 `docker compose pull` + `docker compose up -d` 作为标准流程。
+> 原因是镜像命名空间与标签若未显式传入，可能拉取失败或拉取到错误镜像。
 
-也可以替换为自己的 SQL 路径，例如：
+## 7. 部署完成校验
 
-```cmd
-docker\mysql\import-database.cmd back_end_alice backup\my_data.sql
-```
-
-## 5. 导入后重启后端（让后端使用新库）
-
-```cmd
-docker compose up -d --force-recreate python-backend java-backend
-```
-
-## 6. 常用 CMD 运维命令
-
-查看状态：
+在 CMD 执行：
 
 ```cmd
 docker compose ps
 ```
 
-查看日志：
+当 `mysql`、`redis`、`python-backend`、`java-backend`、`frontend` 均为 `Up` 时，判定部署成功。
+
+## 8. 系统访问
+
+部署成功后可访问：
+
+- 前端：`http://localhost`
+- Java API：`http://localhost:8080`
+- Python API：`http://localhost:8000`
+
+## 9. 系统更新
+
+当代码或镜像更新后，在项目目录执行：
 
 ```cmd
-docker compose logs -f
+git pull
+deploy.cmd 你的DockerHub用户名 V1.0
 ```
 
-停止服务：
+若切换新镜像版本（例如 `V1.1`），执行：
 
 ```cmd
-docker compose down
+deploy.cmd 你的DockerHub用户名 V1.1
 ```
 
-清空数据并重建（慎用）：
+## 10. 数据重置与重建（可选）
+
+如需清空持久化数据并重建：
 
 ```cmd
 docker compose down -v
-docker compose up -d --build
+deploy.cmd 你的DockerHub用户名 V1.0 back_end AUTO
 ```
 
-## 7. 一条命令部署并导入（可选）
+注意：该操作会删除已持久化数据，请确认后执行。
 
-`deploy.cmd` 支持直接带数据库名和 SQL 文件，或 `AUTO` 批量导入：
+## 11. 常用运维命令
 
 ```cmd
-deploy.cmd 你的DockerHub用户名 V1.0 back_end_alice models\scripts\003_seed_data.sql
-deploy.cmd 你的DockerHub用户名 V1.0 back_end AUTO
+docker compose logs -f
+docker compose down
 ```
